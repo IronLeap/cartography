@@ -669,6 +669,8 @@ def test_full_multiple_principal():
             [{"permission": "S3:GetObject"}],
             {"arn:aws:s3:::testbucket": True},
             "OR",
+            {},
+            False,
         ),
     )
 
@@ -723,6 +725,8 @@ def test_full_multiple_principal_multiple_policy_specs():
             [{"permission": "S3:GetObject"}, {"permission": "S3:ListObject"}],
             {"arn:aws:s3:::testbucket": True},
             "AND",
+            {},
+            False,
         ),
     )
 
@@ -777,6 +781,8 @@ def test_full_multiple_principal_resource_spec_disallow():
             [{"permission": "S3:GetObject"}, {"permission": "S3:ListObject"}],
             {"arn:aws:s3:::testbucket": False},
             "AND",
+            {},
+            False,
         ),
     )
 
@@ -831,6 +837,65 @@ def test_full_multiple_principal_resource_spec_none():
             [{"permission": "S3:GetObject"}, {"permission": "S3:ListObject"}],
             {"arn:aws:s3:::testbucket": None},
             "AND",
+            {},
+            False,
+        ),
+    )
+
+
+def test_full_multiple_principal_skip_admins():
+    principals = {
+        "test_principals1": {
+            "ListAllow": [{
+                "action": [
+                    "s3:listobject",
+                    "dynamodb:query",
+                ],
+                "resource": [
+                    "*",
+                ],
+                "effect": "Allow",
+            }],
+            "explicitallow": [{
+                "action": [
+                    "s3:getobject",
+                ],
+                "resource": [
+                    "arn:aws:s3:::testbucket",
+                ],
+                "effect": "Allow",
+            }],
+        },
+        "test_principal2": {
+            "ListAllow": [{
+                "action": [
+                    "s3:List*",
+                ],
+                "resource": [
+                    "*",
+                ],
+                "effect": "Allow",
+            }],
+            "PutAllow": [{
+                "action": [
+                    "s3:Put*",
+                ],
+                "resource": [
+                    "arn:aws:s3:::testbucket",
+                ],
+                "effect": "Allow",
+            }],
+        },
+    }
+    assert 1 == len(
+        permission_relationships.calculate_permission_relationships(
+            principals,
+            ["arn:aws:s3:::testbucket"],
+            [{"permission": "S3:GetObject"}],
+            {"arn:aws:s3:::testbucket": True},
+            "OR",
+            {"test_principals1": True},
+            True,
         ),
     )
 

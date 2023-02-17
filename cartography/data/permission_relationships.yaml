@@ -9,6 +9,7 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_CREATE_STACK
+  skip_admins: True
 # Map principals that can privilege escalate through
 # iam:PassRole, cloudformation:UpdateStack
 # TODO: Consider not caring about which stack can be updated?
@@ -22,6 +23,7 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_UPDATE_STACK
+  skip_admins: True
 # Map principals that can privilege escalate through
 # iam:PassRole, lambda:CreateFunction
 - target_label: AWSRole
@@ -34,6 +36,7 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_CREATE_FUNCTION
+  skip_admins: True
 # Map principals that can privilege escalate through
 # iam:PassRole, lambda:UpdateFunctionCode
 # TODO: Consider not caring about which lambda resource can be updated?
@@ -47,6 +50,7 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_UPDATE_FUNCTION_CODE
+  skip_admins: True
 # Map principals that can privilege escalate through
 # sts:AssumeRole and iam:UpdateAssumeRolePolicy
 - target_label: AWSRole
@@ -56,6 +60,7 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: UPDATE_ASSUME_ROLE_POLICY
+  skip_admins: True
 # Map principals that can privilege escalate through
 # iam:UpdateLoginProfile or iam:CreateLoginProfile
 - target_label: AWSUser
@@ -65,6 +70,7 @@
   policy_specs_aggregation: OR
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: CREATE_OR_UPDATE_LOGIN_PROFILE
+  skip_admins: True
 # Map principals that can privilege escalate through
 # iam:CreateAccessKey
 - target_label: AWSUser
@@ -73,6 +79,7 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: CREATE_ACCESS_KEY
+  skip_admins: True
 # Map principals that can privilege escalate through
 # iam:AddUserToGroup
 - target_label: AWSGroup
@@ -81,3 +88,17 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: ADD_USER_TO_GROUP
+  skip_admins: True
+# Map principals that can privilege escalate through
+# iam:PassRole, ec2:RunInstances
+- target_label: AWSRole
+  permissions_policy_specs:
+  - permission: iam:PassRole
+  - permission: ec2:RunInstances
+    resource: '*'
+  resource_policy_specs:
+  - service: ec2.amazonaws.com
+  policy_specs_aggregation: AND
+  relationship_name: PRIVILEGE_ESCALATION
+  relationship_reason: PASS_ROLE_TO_EC2_THROUGH_RUN_INSTANCES
+  skip_admins: True

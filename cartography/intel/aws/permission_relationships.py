@@ -171,6 +171,8 @@ def calculate_permission_relationships(
     permissions_policy_specs: List[Dict],
     resource_spec_matches: Dict,
     policy_specs_aggregation: str,
+    principals_admin_status: Dict[str, bool],
+    skip_admins: bool,
 ) -> List[Dict]:
     """ Evaluate principals permissions to resources
     This currently only evaluates policies on IAM principals. It does not take into account
@@ -197,7 +199,9 @@ def calculate_permission_relationships(
             # Skipping self edges
             if principal_arn == resource_arn:
                 continue
-            # TODO: Skip if principal is admin
+            # Skipping admins
+            if skip_admins and principals_admin_status.get(principal_arn, False):
+                continue
             allows: List[bool] = [
                 principal_allowed_on_resource(
                     policies,
@@ -241,7 +245,7 @@ def calculate_seed_admin_principals(
             permission = 'iam:PutRolePolicy'
         else:
             permission = 'iam:PutGroupPolicy'
-        if principal_allowed_on_resource(policies, principal_arn, [permission]):
+        if principal_allowed_on_resource(policies, principal_arn, [{"permission": permission}]):
             seed_admin_principals.append({"principal_arn": principal_arn, "admin_reason": permission})
             continue
 
@@ -252,7 +256,7 @@ def calculate_seed_admin_principals(
             permission = 'iam:AttachRolePolicy'
         else:
             permission = 'iam:AttachGroupPolicy'
-        if principal_allowed_on_resource(policies, principal_arn, [permission]):
+        if principal_allowed_on_resource(policies, principal_arn, [{"permission": permission}]):
             seed_admin_principals.append({"principal_arn": principal_arn, "admin_reason": permission})
             continue
 
@@ -321,7 +325,7 @@ def compile_statement(statements: List[Any]) -> List[Any]:
     return statements
 
 
-def get_principals_for_account(neo4j_session: neo4j.Session, account_id: str) -> Dict:
+def get_principals_for_account(neo4j_session: neo4j.Session, account_id: str) -> Tuple[Dict, Dict]:
     get_policy_query = """
     MATCH
     (acc:AWSAccount{id:$AccountId})-[:RESOURCE]->
@@ -329,21 +333,25 @@ def get_principals_for_account(neo4j_session: neo4j.Session, account_id: str) ->
     (policy:AWSPolicy)-[:STATEMENT]->
     (statements:AWSPolicyStatement)
     RETURN
-    DISTINCT principal.arn as principal_arn, policy.id as policy_id, collect(statements) as statements
+    DISTINCT principal.arn as principal_arn, principal.is_admin as is_admin, policy.id as policy_id,
+    collect(statements) as statements
     """
     results = neo4j_session.run(
         get_policy_query,
         AccountId=account_id,
     )
     principals: Dict[Any, Any] = {}
+    principals_admin_status: Dict[Any, bool] = {}
     for r in results:
         principal_arn = r["principal_arn"]
+        is_admin = r["is_admin"]
         policy_id = r["policy_id"]
         statements = r["statements"]
         if principal_arn not in principals:
             principals[principal_arn] = {}
         principals[principal_arn][policy_id] = compile_statement(parse_statement_node(statements))
-    return principals
+        principals_admin_status[principal_arn] = (is_admin is True)
+    return principals, principals_admin_status
 
 
 def get_iam_principals_for_account(neo4j_session: neo4j.Session, account_id: str) -> Dict:
@@ -521,7 +529,13 @@ def parse_permission_relationships_file(file_path: str) -> List[Any]:
 
 
 def is_valid_spec(rpr: Dict) -> bool:
-    required_fields = ["target_label", "permissions_policy_specs", "policy_specs_aggregation", "relationship_name"]
+    required_fields = [
+        "target_label",
+        "permissions_policy_specs",
+        "policy_specs_aggregation",
+        "relationship_name",
+        "skip_admins",
+    ]
     for field in required_fields:
         if field not in rpr:
             return False
@@ -551,6 +565,8 @@ def is_valid_spec(rpr: Dict) -> bool:
     if not isinstance(rpr["relationship_name"], str):
         return False
     if "relationship_reason" in rpr and not isinstance(rpr["relationship_reason"], str):
+        return False
+    if not isinstance(rpr["skip_admins"], bool):
         return False
     return True
 
@@ -621,7 +637,9 @@ def sync_permission_relationships(
     current_aws_account_id: str, update_tag: int, common_job_parameters: Dict,
 ) -> None:
     logger.info("Syncing Permission Relationships for account '%s'.", current_aws_account_id)
-    principals = get_principals_for_account(neo4j_session, current_aws_account_id)
+    principals, principals_admin_status = get_principals_for_account(
+        neo4j_session, current_aws_account_id,
+    )
 
     pr_file = common_job_parameters["permission_relationships_file"]
     if not pr_file:
@@ -642,6 +660,7 @@ def sync_permission_relationships(
         policy_specs_aggregation = rel_mapping["policy_specs_aggregation"]
         relationship_name = rel_mapping["relationship_name"]
         relationship_reason = rel_mapping.get("relationship_reason", None)
+        skip_admins = rel_mapping["skip_admins"]
         resource_arns = get_resource_arns(neo4j_session, current_aws_account_id, target_label)
         resource_spec_matches = get_resource_spec_matches(
             neo4j_session, resource_policy_specs, resource_arns,
@@ -658,6 +677,8 @@ def sync_permission_relationships(
             permissions_policy_specs,
             resource_spec_matches,
             policy_specs_aggregation,
+            principals_admin_status,
+            skip_admins,
         )
         load_principal_mappings(
             neo4j_session,
