@@ -5,6 +5,7 @@ from string import Template
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 from typing import Pattern
 from typing import Tuple
 
@@ -28,7 +29,7 @@ def evaluate_clause(clause: str, match: str) -> bool:
         match {str} -- The item to match against.
 
     Returns:
-        [bool] -- True if the clause matched, False otherwise
+        bool -- True if the clause matched, False otherwise
     """
     result = compile_regex(clause).fullmatch(match)
     return result is not None
@@ -74,16 +75,16 @@ def evaluate_notresource_for_permission(statement: Dict, resource_arn: str) -> b
     return False
 
 
-def evaluate_statements_for_permission(statements: List[Dict], permission: str, resource_arn: str) -> bool:
+def evaluate_statements_for_permission(statements: List[Dict], resource_arn: str, permission: str) -> bool:
     """ Evaluate an entire statement for a specific permission against a resource
 
     Arguments:
         statements {[dict]} -- The list of statements to be evaluated
         permission {str} -- The permission to evaluate. ex "s3:GetObject"
-        resource_arn {[type]} -- The resource to test the permission against
+        resource_arn {str} -- The resource to test the permission against
 
     Returns:
-        [bool] -- If the statement grants the specific permission to the resource
+        bool -- If the statement grants the specific permission to the resource
     """
     allowed = False
     for statement in statements:
@@ -92,21 +93,20 @@ def evaluate_statements_for_permission(statements: List[Dict], permission: str, 
                 if evaluate_resource_for_permission(statement, resource_arn):
                     if not evaluate_notresource_for_permission(statement, resource_arn):
                         return True
-
     return allowed
 
 
-def evaluate_policy_for_permissions(
-    statements: List[Dict], permissions: List[str], resource_arn: str,
+def evaluate_policy_for_permission(
+    statements: List[Dict], resource_arn: str, permission: str,
 ) -> Tuple[bool, bool]:
-    """ Evaluates an entire policy for specific permissions to a resource.
+    """ Evaluates an entire policy for specific permission to a resource.
     AWS Policy evaluation reference
     https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html
 
     Arguments:
         statements {[dict]} -- The list of statements for the policy
-        permissions {[str]} -- The permissions to evaluate
-        resource_arn {[type]} -- The resource to test the permission against
+        permission {str} -- The permission to evaluate
+        resource_arn {str} -- The resource to test the permission against
 
     Returns:
         [(bool, bool)] -- (allowed_by_policy, explicitly_denied_by_policy)
@@ -117,47 +117,59 @@ def evaluate_policy_for_permissions(
     """
     allow_statements = [s for s in statements if s["effect"] == "Allow"]
     deny_statements = [s for s in statements if s["effect"] == "Deny"]
-    for permission in permissions:
-        if evaluate_statements_for_permission(deny_statements, permission, resource_arn):
-            # The action explicitly denied then no other policy can override it
-            return False, True
-        else:
-            if evaluate_statements_for_permission(allow_statements, permission, resource_arn):
-                # The action is allowed by this policy
-                return True, False
-    # The action is not allowed by this policy, but not specifically denied either
-    return False, False
+    if evaluate_statements_for_permission(deny_statements, resource_arn, permission):
+        # The action explicitly denied then no other policy can override it
+        return False, True
+    elif evaluate_statements_for_permission(allow_statements, resource_arn, permission):
+        # The action is allowed by this policy
+        return True, False
+    else:
+        # The action is not allowed by this policy, but not specifically denied either
+        return False, False
 
 
-def principal_allowed_on_resource(policies: Dict, resource_arn: str, permissions: List[str]) -> bool:
-    """ Evaluates an enture set of policies for a specific resource for a specific permission.
-
+def principal_allowed_on_resource(
+    policies: Dict, resource_arn: str, permissions_policy_specs: List[Dict], policy_specs_aggregation: str = "OR",
+) -> bool:
+    """ Evaluates an entire set of policies for a specific resource for the given policy specs.
 
     Arguments:
-        policies {[dict]} -- The policys to evaluate
+        policies {dict} -- The policys to evaluate
         resource_arn {str} -- The resource to test the permission against
-        permissions {[str]} -- The permissions to evaluate
+        permissions_policy_specs {[dict]} -- The policy specs to evaluate
+        policy_specs_aggregation {str} -- How to aggregate policy specs list
 
     Returns:
-        [bool] -- True if the policies allow the permission against the resource
+        bool -- True if the policies allow the permission against the resource
     """
-    if not isinstance(permissions, list):
-        raise ValueError("permissions is not a list")
-    granted = False
-    for _, statements in policies.items():
-        allowed, explicit_deny = evaluate_policy_for_permissions(statements, permissions, resource_arn)
-
-        if explicit_deny:
-
-            return False
-        if not granted and allowed:
-            granted = True
-
-    return granted
+    if not isinstance(permissions_policy_specs, list):
+        raise ValueError("permissions_policy_specs is not a list")
+    if policy_specs_aggregation not in ["AND", "OR"]:
+        raise ValueError("policy_specs_aggregation must be AND or OR strings")
+    granted: List[bool] = []
+    for pps in permissions_policy_specs:
+        pps_granted = False
+        for _, statements in policies.items():
+            if "permission" not in pps:
+                raise ValueError("pps dict must have permission field")
+            permission = pps["permission"]
+            resource_arn = pps["resource"] if "resource" in pps else resource_arn
+            allowed, explicit_deny = evaluate_policy_for_permission(statements, resource_arn, permission)
+            if explicit_deny:
+                pps_granted = False
+                break
+            if allowed:
+                pps_granted = True
+        granted.append(pps_granted)
+    return any(granted) if policy_specs_aggregation == "OR" else all(granted)
 
 
 def calculate_permission_relationships(
-    principals: Dict, resource_arns: List[str], permissions: List[str],
+    principals: Dict,
+    resource_arns: List[str],
+    permissions_policy_specs: List[Dict],
+    resource_spec_matches: Dict,
+    policy_specs_aggregation: str,
 ) -> List[Dict]:
     """ Evaluate principals permissions to resources
     This currently only evaluates policies on IAM principals. It does not take into account
@@ -169,9 +181,11 @@ def calculate_permission_relationships(
     https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html
 
     Arguments:
-        principals {[dict]} -- The principals to check permission for
+        principals {dict} -- The principals to check permission for
         resource_arns {[str]} -- The resources to test the permission against
-        permissions {[str]} -- The permissions to evaluate
+        permissions_policy_specs {[Dict]} -- The policy specifications to check for
+        resource_spec_matches {Dict} -- Whether resources matches the resource spec
+        policy_specs_aggregation {str} -- How to aggregate policy specs
 
     Returns:
         [dict] -- The allowed mappings
@@ -179,8 +193,25 @@ def calculate_permission_relationships(
     allowed_mappings: List[Dict] = []
     for resource_arn in resource_arns:
         for principal_arn, policies in principals.items():
-            if principal_allowed_on_resource(policies, resource_arn, permissions):
-                allowed_mappings.append({"principal_arn": principal_arn, "resource_arn": resource_arn})
+            # Skipping self edges
+            if principal_arn == resource_arn:
+                continue
+            # TODO: Skip if principal is admin
+            allows: List[bool] = [
+                principal_allowed_on_resource(
+                    policies,
+                    resource_arn,
+                    permissions_policy_specs,
+                    policy_specs_aggregation,
+                ),
+            ]
+            if resource_spec_matches[resource_arn] is not None:
+                allows.append(resource_spec_matches[resource_arn])
+            final_allow = any(allows) if policy_specs_aggregation == "OR" else all(allows)
+            if final_allow:
+                allowed_mappings.append(
+                    {"principal_arn": principal_arn, "resource_arn": resource_arn},
+                )
     return allowed_mappings
 
 
@@ -281,16 +312,51 @@ def get_resource_arns(neo4j_session: neo4j.Session, account_id: str, node_label:
     return arns
 
 
+def get_resource_spec_matches(
+    neo4j_session: neo4j.Session, resource_policy_specs: List[Dict], resource_arns: List[str],
+) -> Dict:
+    """
+    For each resource_arn, return whether it meets the resource policy spec.
+    Currently, we assume resource_policy_specs is a list of size <= 1 with a service key.
+    """
+    resource_arn_to_match: Dict = {
+        resource_arn: None for resource_arn in resource_arns
+    }
+    if len(resource_policy_specs) == 0:
+        return resource_arn_to_match
+
+    service_to_match = resource_policy_specs[0]["service"]
+    get_resource_service_query = """
+    UNWIND $resource_arns as resource_arn
+    OPTIONAL MATCH (resource:AWSRole{arn:resource_arn})-[:TRUSTS_AWS_PRINCIPAL]->
+    (p:AWSPrincipal)
+    WHERE p.type = 'Service'
+    AND p.arn = $service_to_match
+    return resource_arn, COUNT(p) > 0 as match
+    """
+    results = neo4j_session.run(
+        get_resource_service_query,
+        resource_arns=resource_arns,
+        service_to_match=service_to_match,
+    )
+
+    for res in results:
+        resource_arn, match = res["resource_arn"], res["match"]
+        resource_arn_to_match[resource_arn] = match
+    return resource_arn_to_match
+
+
 def load_principal_mappings(
     neo4j_session: neo4j.Session, principal_mappings: List[Dict], node_label: str,
-    relationship_name: str, update_tag: int,
+    relationship_name: str, relationship_reason: Optional[str], update_tag: int,
 ) -> None:
     map_policy_query = Template("""
     UNWIND $Mapping as mapping
     MATCH (principal:AWSPrincipal{arn:mapping.principal_arn})
     MATCH (resource:$node_label{arn:mapping.resource_arn})
     MERGE (principal)-[r:$relationship_name]->(resource)
-    SET r.lastupdated = $aws_update_tag
+    SET r.lastupdated = $aws_update_tag,
+    r.relationship_reason = $relationship_reason
     """)
     if not principal_mappings:
         return
@@ -302,11 +368,16 @@ def load_principal_mappings(
         map_policy_query_template,
         Mapping=principal_mappings,
         aws_update_tag=update_tag,
+        relationship_reason=relationship_reason,
     )
 
 
 def cleanup_rpr(
-    neo4j_session: neo4j.Session, node_label: str, relationship_name: str, update_tag: int,
+    neo4j_session: neo4j.Session,
+    node_label: str,
+    relationship_name: str,
+    relationship_reason: Optional[str],
+    update_tag: int,
     current_aws_id: str,
 ) -> None:
     logger.info("Cleaning up relationship '%s' for node label '%s'", relationship_name, node_label)
@@ -314,6 +385,7 @@ def cleanup_rpr(
         MATCH (:AWSAccount{id: $AWS_ID})-[:RESOURCE]->(principal:AWSPrincipal)-[r:$relationship_name]->
         (resource:$node_label)
         WHERE r.lastupdated <> $UPDATE_TAG
+        AND r.relationship_reason = $relationship_reason
         WITH r LIMIT $LIMIT_SIZE  DELETE (r) return COUNT(*) as TotalCompleted
     """)
     cleanup_rpr_query_template = cleanup_rpr_query.safe_substitute(
@@ -322,8 +394,14 @@ def cleanup_rpr(
     )
 
     statement = GraphStatement(
-        cleanup_rpr_query_template, {'UPDATE_TAG': update_tag, 'AWS_ID': current_aws_id},
-        True, 1000,
+        cleanup_rpr_query_template,
+        {
+            'UPDATE_TAG': update_tag,
+            'AWS_ID': current_aws_id,
+            'relationship_reason': relationship_reason,
+        },
+        True,
+        1000,
     )
     statement.run(neo4j_session)
 
@@ -344,12 +422,38 @@ def parse_permission_relationships_file(file_path: str) -> List[Any]:
         return []
 
 
-def is_valid_rpr(rpr: Dict) -> bool:
-    required_fields = ["permissions", "relationship_name", "target_label"]
+def is_valid_spec(rpr: Dict) -> bool:
+    required_fields = ["target_label", "permissions_policy_specs", "policy_specs_aggregation", "relationship_name"]
     for field in required_fields:
         if field not in rpr:
             return False
-
+    if not isinstance(rpr["target_label"], str):
+        return False
+    if not isinstance(rpr["permissions_policy_specs"], list):
+        return False
+    for pps in rpr["permissions_policy_specs"]:
+        pps_keys = pps.keys()
+        if "permission" not in pps_keys:
+            return False
+        if len(pps_keys) > 2:
+            return False
+        if len(pps_keys) == 2 and "resource" not in pps_keys:
+            return False
+    if "resource_policy_specs" in rpr:
+        if not isinstance(rpr["resource_policy_specs"], list):
+            return False
+        if len(rpr["resource_policy_specs"]) != 1:
+            return False
+        if "service" not in rpr["resource_policy_specs"][0]:
+            return False
+        if rpr["target_label"] != "AWSRole":
+            return False
+    if rpr["policy_specs_aggregation"] not in ["AND", "OR"]:
+        return False
+    if not isinstance(rpr["relationship_name"], str):
+        return False
+    if "relationship_reason" in rpr and not isinstance(rpr["relationship_reason"], str):
+        return False
     return True
 
 
@@ -368,20 +472,47 @@ def sync(
         )
         return
     relationship_mapping = parse_permission_relationships_file(pr_file)
-    for rpr in relationship_mapping:
-        if not is_valid_rpr(rpr):
-            raise ValueError("""
-        Resource permission relationship is missing fields.
-        Required fields: permissions, relationship_name, target_label"
-        """)
-        permissions = rpr["permissions"]
-        relationship_name = rpr["relationship_name"]
-        target_label = rpr["target_label"]
+    for rel_mapping in relationship_mapping:
+        if not is_valid_spec(rel_mapping):
+            raise ValueError(
+                f'Invalid rel_mapping spec {rel_mapping}',
+            )
+        target_label = rel_mapping["target_label"]
+        permissions_policy_specs = rel_mapping["permissions_policy_specs"]
+        resource_policy_specs = rel_mapping.get("resource_policy_specs", [])
+        policy_specs_aggregation = rel_mapping["policy_specs_aggregation"]
+        relationship_name = rel_mapping["relationship_name"]
+        relationship_reason = rel_mapping.get("relationship_reason", None)
         resource_arns = get_resource_arns(neo4j_session, current_aws_account_id, target_label)
-        logger.info("Syncing relationship '%s' for node label '%s'", relationship_name, target_label)
-        allowed_mappings = calculate_permission_relationships(principals, resource_arns, permissions)
-        load_principal_mappings(
-            neo4j_session, allowed_mappings,
-            target_label, relationship_name, update_tag,
+        resource_spec_matches = get_resource_spec_matches(
+            neo4j_session, resource_policy_specs, resource_arns,
         )
-        cleanup_rpr(neo4j_session, target_label, relationship_name, update_tag, current_aws_account_id)
+        logger.info(
+            "Syncing relationship '%s' with reason '%s' for node label '%s'",
+            relationship_name,
+            relationship_reason,
+            target_label,
+        )
+        allowed_mappings = calculate_permission_relationships(
+            principals,
+            resource_arns,
+            permissions_policy_specs,
+            resource_spec_matches,
+            policy_specs_aggregation,
+        )
+        load_principal_mappings(
+            neo4j_session,
+            allowed_mappings,
+            target_label,
+            relationship_name,
+            relationship_reason,
+            update_tag,
+        )
+        cleanup_rpr(
+            neo4j_session,
+            target_label,
+            relationship_name,
+            relationship_reason,
+            update_tag,
+            current_aws_account_id,
+        )
