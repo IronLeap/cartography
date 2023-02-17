@@ -1,36 +1,3 @@
-# Map principals that can read items from an S3Bucket. Specifically,
-# create an (:AWSPrincipal)-[:CAN_READ]->(:S3Bucket) relationship
-# for principals that have a policy attached with the below
-# policy specs. Similar logic applies for the other entries in this file.
-- target_label: S3Bucket
-  permissions_policy_specs:
-  - permission: S3:GetObject
-  policy_specs_aggregation: OR
-  relationship_name: CAN_READ
-# Map principals that can write items to an S3Bucket.
-- target_label: S3Bucket
-  permissions_policy_specs:
-  - permission: S3:PutObject
-  policy_specs_aggregation: OR
-  relationship_name: CAN_WRITE
-# Map principals that can retrieve data from DynamoDB.
-- target_label: DynamoDBTable
-  permissions_policy_specs:
-  - permission: dynamodb:BatchGetItem
-  - permission: dynamodb:GetItem
-  - permission: dynamodb:GetRecords
-  - permission: dynamodb:Query
-  policy_specs_aggregation: OR
-  relationship_name: CAN_QUERY
-# Map principals that can administer RedshiftClusters.
-- target_label: RedshiftCluster
-  permissions_policy_specs:
-  - permission: redshift:*
-  - permission: redshift:CreateClusterUser
-  - permission: redshift:GetClusterCredentials
-  - permission: redshift:JoinGroup
-  policy_specs_aggregation: OR
-  relationship_name: CAN_ADMINISTER
 # Map principals that can privilege escalate through iam:PassRole, cloudformation:CreateStack
 - target_label: AWSRole
   permissions_policy_specs:
@@ -42,8 +9,9 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_CREATE_STACK
-# Map principals that can privilege escalate through iam:PassRole, cloudformation:UpdateStack
-# TODO: Consider not caring about which stack can be updated?  
+# Map principals that can privilege escalate through
+# iam:PassRole, cloudformation:UpdateStack
+# TODO: Consider not caring about which stack can be updated?
 - target_label: AWSRole
   permissions_policy_specs:
   - permission: iam:PassRole
@@ -54,7 +22,8 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_UPDATE_STACK
-# Map principals that can privilege escalate through iam:PassRole, lambda:CreateFunction
+# Map principals that can privilege escalate through
+# iam:PassRole, lambda:CreateFunction
 - target_label: AWSRole
   permissions_policy_specs:
   - permission: iam:PassRole
@@ -65,7 +34,8 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_CREATE_FUNCTION
-# Map principals that can privilege escalate through iam:PassRole, lambda:UpdateFunctionCode
+# Map principals that can privilege escalate through
+# iam:PassRole, lambda:UpdateFunctionCode
 # TODO: Consider not caring about which lambda resource can be updated?
 - target_label: AWSRole
   permissions_policy_specs:
@@ -77,10 +47,12 @@
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: PASS_ROLE_TO_CLOUDFORMATION_THROUGH_UPDATE_FUNCTION_CODE
-# Map principals that can privilege escalate through iam:UpdateAssumeRolePolicy
+# Map principals that can privilege escalate through
+# sts:AssumeRole and iam:UpdateAssumeRolePolicy
 - target_label: AWSRole
   permissions_policy_specs:
   - permission: iam:UpdateAssumeRolePolicy
+  - permission: sts:AssumeRole
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: UPDATE_ASSUME_ROLE_POLICY
@@ -93,19 +65,19 @@
   policy_specs_aggregation: OR
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: CREATE_OR_UPDATE_LOGIN_PROFILE
-# Map principals that can privilege escalate through iam:CreateAccessKey
+# Map principals that can privilege escalate through
+# iam:CreateAccessKey
 - target_label: AWSUser
   permissions_policy_specs:
   - permission: iam:CreateAccessKey
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: CREATE_ACCESS_KEY
-# Map principals that can privilege escalate through iam:AddUserToGroup
+# Map principals that can privilege escalate through
+# iam:AddUserToGroup
 - target_label: AWSGroup
   permissions_policy_specs:
   - permission: iam:AddUserToGroup
   policy_specs_aggregation: AND
   relationship_name: PRIVILEGE_ESCALATION
   relationship_reason: ADD_USER_TO_GROUP
-
-
