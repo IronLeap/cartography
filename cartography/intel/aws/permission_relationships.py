@@ -238,47 +238,47 @@ def calculate_seed_high_principals(
             continue
 
         # Check for basic administrative access.
-        if principal_allowed_on_resource(policies, "*", ["*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "AdministratorAccessPolicy"})
             continue
 
         # Check for high permission for S3 - full access.
-        if principal_allowed_on_resource(policies, "*", ["s3:*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "s3:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "S3FullAccess"})
             continue
-        if principal_allowed_on_resource(policies, "arn:aws:s3:::*", ["s3:*"]):
+        if principal_allowed_on_resource(policies, "arn:aws:s3:::*", [{"permission": "s3:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "S3FullAccess"})
             continue
 
         # Check for high permission for RDS - full access.
-        if principal_allowed_on_resource(policies, "*", ["rds:*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "rds:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "RDSFullAccess"})
             continue
-        if principal_allowed_on_resource(policies, "arn:aws:rds:::*", ["rds:*"]):
+        if principal_allowed_on_resource(policies, "arn:aws:rds:::*", [{"permission": "rds:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "RDSFullAccess"})
             continue
 
         # Check for high permissions for EC2 - full access
-        if principal_allowed_on_resource(policies, "*", ["ec2:*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "ec2:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "EC2FullAccess"})
             continue
-        if principal_allowed_on_resource(policies, "arn:aws:ec2:::*", ["ec2:*"]):
+        if principal_allowed_on_resource(policies, "arn:aws:ec2:::*", [{"permission": "ec2:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "EC2FullAccess"})
             continue
 
         # Check for high permissions for ECR - full access
-        if principal_allowed_on_resource(policies, "*", ["ecr:*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "ecr:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "ECRFullAccess"})
             continue
-        if principal_allowed_on_resource(policies, "arn:aws:ecr:::*", ["ecr:*"]):
+        if principal_allowed_on_resource(policies, "arn:aws:ecr:::*", [{"permission": "ecr:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "ECRFullAccess"})
             continue
 
         # Check for high permissions for ECS - full access
-        if principal_allowed_on_resource(policies, "*", ["ecs:*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "ecs:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "ECSFullAccess"})
             continue
-        if principal_allowed_on_resource(policies, "arn:aws:ecs:::*", ["ecs:*"]):
+        if principal_allowed_on_resource(policies, "arn:aws:ecs:::*", [{"permission": "ecs:*"}]):
             seed_high_principals.append({"principal_arn": principal_arn, "high_reason": "ECSFullAccess"})
             continue
     return seed_high_principals
@@ -302,7 +302,7 @@ def calculate_seed_admin_principals(
         principal_node_arn_str = ':'.join(principal_arn.split(':')[5:])
         principal_node_type = principal_node_arn_str.split("/")[0]
 
-        if principal_allowed_on_resource(policies, "*", ["*"]):
+        if principal_allowed_on_resource(policies, "*", [{"permission": "*"}]):
             seed_admin_principals.append({"principal_arn": principal_arn, "admin_reason": "AdministratorAccessPolicy"})
             continue
 
