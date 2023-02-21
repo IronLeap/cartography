@@ -1,5 +1,4 @@
 import copy
-from unittest import mock
 
 import cartography.intel.aws.iam
 import cartography.intel.aws.permission_relationships
