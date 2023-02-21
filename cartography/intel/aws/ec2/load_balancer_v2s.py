@@ -208,7 +208,6 @@ def load_load_balancer_v2_target_groups(
             continue
 
 
-
 @timeit
 def load_load_balancer_v2_listeners(
     neo4j_session: neo4j.Session, load_balancer_id: str, listener_data: List[Dict],
