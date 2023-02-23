@@ -195,7 +195,7 @@ def test_load_account_password_policy(neo4j_session):
 
 
 def test_load_instance_profiles(neo4j_session):
-    data = tests.data.aws.iam.LIST_ROLES['Roles']
+    data = tests.data.aws.iam.INSTANCE_PROFILE_ROLES['Roles']
     cartography.intel.aws.iam.load_roles(
         neo4j_session,
         data,
@@ -214,8 +214,12 @@ def test_load_instance_profiles(neo4j_session):
     )
     expected_nodes = {
         (
-            "arn:aws:iam::000000000000:instance-profile/ExampleInstanceProfile",
-            "arn:aws:iam::000000000000:role/example-role-0",
+            "arn:aws:iam::000000000000:instance-profile/SERVICE_NAME_2",
+            "arn:aws:iam::000000000000:role/SERVICE_NAME_2",
+        ),
+        (
+            "arn:aws:iam::000000000000:instance-profile/ANOTHER_SERVICE_NAME",
+            "arn:aws:iam::000000000000:role/ANOTHER_SERVICE_NAME",
         ),
     }
     nodes = neo4j_session.run(
