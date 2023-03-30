@@ -10,8 +10,13 @@ from typing import Pattern
 from typing import Tuple
 
 import boto3
+import json
 import neo4j
+import random
+import string
 import yaml
+
+from zeuscloud_iamspy import Model
 
 from cartography.graph.statement import GraphStatement
 from cartography.util import timeit
@@ -503,6 +508,191 @@ def get_resource_spec_matches(
     return resource_arn_to_match
 
 
+def get_s3_bucket_resource_policy_data(
+    neo4j_session: neo4j.Session, current_aws_account_id: str,
+) -> List:
+    get_s3_bucket_names = """
+    MATCH (a:AWSAccount{id: $AWS_ID})-[:RESOURCE]->(s:S3Bucket)
+    OPTIONAL MATCH (s)-[:POLICY_STATEMENT]->(st:S3PolicyStatement)
+    RETURN 
+    a.id as account_id,
+    s.id as bucket_name,
+    CASE WHEN st IS NULL then false ELSE true END as has_policy,
+    st.sid as sid,
+    st.effect as effect,
+    st.action as action,
+    st.resource as resource,
+    st.principal as principal,
+    st.condition as condition
+    """
+    results = neo4j_session.run(
+        get_s3_bucket_names,
+        AWS_ID=current_aws_account_id,
+    )
+
+    data_dict = {}
+    for res in results:
+        if not res["bucket_name"] or not res["account_id"]:
+            continue
+        if res["bucket_name"] not in data_dict:
+            data_dict[res["bucket_name"]] = {
+                "Resource": "arn:aws:s3:::" + res["bucket_name"],
+                "Policy": {
+                    "Version": "2012-10-17",
+                    "Statement": []
+                },
+                "Account": res["account_id"],
+            }
+        if not res["has_policy"]:
+            continue
+        statement = {}
+        if res["sid"]:
+            statement["Sid"] = res["sid"]
+        if res["effect"]:
+            statement["Effect"] = res["effect"]
+        if res["principal"]:
+            statement["Principal"] = json.loads(res["principal"])
+        if res["action"]:
+            statement["Action"] = res["action"]
+        if res["resource"]:
+            statement["Resource"] = res["resource"]
+        if res["condition"]:
+            statement["Condition"] = json.loads(res["condition"])
+        data_dict[res["bucket_name"]]["Policy"]["Statement"].append(statement)
+
+    return list(data_dict.values())
+
+
+@timeit
+def get_account_authorization_details(boto3_session: boto3.session.Session) -> Dict:
+    client = boto3_session.client('iam')
+    paginator = client.get_paginator('get_account_authorization_details')
+    user_detail_list: List[Dict] = []
+    group_detail_list: List[Dict] = []
+    role_detail_list: List[Dict] = []
+    policies: List[Dict] = []
+    for page in paginator.paginate():
+        user_detail_list.extend(page.get('UserDetailList', []))
+        group_detail_list.extend(page.get('GroupDetailList', []))
+        role_detail_list.extend(page.get('RoleDetailList', []))
+        policies.extend(page.get('Policies', []))
+    return {
+        "UserDetailList": user_detail_list,
+        "GroupDetailList": group_detail_list,
+        "RoleDetailList": role_detail_list,
+        "Policies": policies
+    }
+
+
+def load_s3_bucket_policy_access(
+    neo4j_session: neo4j.Session,
+    model: Model,
+    resources: List,
+    current_aws_account_id: str,
+    update_tag: int,
+) -> None:
+    create_generic_aws_account_query = """
+        MERGE (g:GenericAwsAccount)
+        ON CREATE SET g.firstseen = timestamp(), 
+        g.lastupdated = $aws_update_tag    
+    """
+    neo4j_session.run(
+        create_generic_aws_account_query,
+        aws_update_tag=update_tag,
+    )
+
+    for resource in resources:
+        principal_has_policy_access_query = """
+            UNWIND $Principals as principal
+            MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(p:AWSPrincipal{arn:principal.Principal})
+            MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(s:S3Bucket{arn:$BucketArn})
+            MERGE (p)-[r:HAS_POLICY_ACCESS]->(s)
+            ON CREATE SET r.firstseen = timestamp()
+            SET r.lastupdated = $aws_update_tag,
+            r.actions = principal.Actions
+        """
+
+        generic_aws_account_has_policy_access_query = """
+            MATCH (g:GenericAwsAccount)
+            MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(s:S3Bucket{arn:$BucketArn})
+            MERGE (g)-[r:HAS_POLICY_ACCESS]->(s)
+            ON CREATE SET r.firstseen = timestamp()
+            SET r.lastupdated = $aws_update_tag,
+            r.actions = $Actions
+        """
+
+        principal_dct: Dict = {}
+        actions_allowed_by_all_accounts: List[str] = []
+        def mark_principal_and_action(principal:str, action: str):
+            if principal == "arn:aws:iam::000000000000:user/AllAWSAccounts":
+                actions_allowed_by_all_accounts.append(action)
+                return
+            if principal not in principal_dct:
+                principal_dct[principal] = {
+                    "Principal": principal,
+                    "Actions": []
+                }
+            principal_dct[principal]["Actions"].append(action)
+
+        for action in [
+            "s3:GetObject",
+            "s3:GetObjectAcl",
+            "s3:GetObjectVersion",
+            "s3:GetBucketAcl",
+            "s3:GetBucketLogging",
+            "s3:GetBucketPolicy",
+            "s3:GetBucketLocation",
+            "s3:GetLifecycleConfiguration",
+            "s3:PutObject",
+            "s3:PutObjectAcl",
+            "s3:PutLifecycleConfiguration",
+            "s3:PutBucketAcl",
+            "s3:PutBucketPolicy",
+            "s3:DeleteObject",
+            "s3:DeleteObjectVersion",
+            "s3:DeleteBucket",
+            "s3:DeleteBucketPolicy",
+        ]:
+            normal_who_can = model.who_can(action, resource["Resource"])
+            slash_who_can = model.who_can(action, resource["Resource"] + "/")
+            able_principals = list(set(normal_who_can + slash_who_can))
+            for principal in able_principals:
+                mark_principal_and_action(principal, action)
+        neo4j_session.run(
+            principal_has_policy_access_query,
+            Principals=[principal for principal in principal_dct.values() if len(principal["Actions"]) > 0],
+            BucketArn=resource["Resource"],
+            AccountId=current_aws_account_id,
+            aws_update_tag=update_tag,
+        )
+
+        neo4j_session.run(
+            generic_aws_account_has_policy_access_query,
+            Actions=actions_allowed_by_all_accounts,
+            BucketArn=resource["Resource"],
+            AccountId=current_aws_account_id,
+            aws_update_tag=update_tag,
+        )
+
+
+def cleanup_s3_bucket_policy_access(
+    neo4j_session: neo4j.Session, current_aws_account_id: str,
+) -> None:
+    logger.info("Cleaning up s3 bucket policy access")
+    cleanup_query = """
+        MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(s:S3Bucket)
+        MATCH ()-[r:HAS_POLICY_ACCESS]->(s)
+        WITH r LIMIT $LIMIT_SIZE DELETE (r) return COUNT(*) as TotalCompleted
+    """
+    statement = GraphStatement(
+        cleanup_query,
+        { 'AccountId': current_aws_account_id },
+        True,
+        1000,
+    )
+    statement.run(neo4j_session)
+
+
 def load_principal_mappings(
     neo4j_session: neo4j.Session, principal_mappings: List[Dict], node_label: str,
     relationship_name: str, relationship_reason: Optional[str], update_tag: int,
@@ -860,11 +1050,81 @@ def sync_permission_relationships(
         )
 
 
+def sync_iamspy_relationships(
+    neo4j_session: neo4j.Session,
+    boto3_session: boto3.session.Session, 
+    current_aws_account_id: str,
+    update_tag: int,
+    common_job_parameters: Dict,
+) -> None:
+    gaad = get_account_authorization_details(boto3_session)
+    gaad["UserDetailList"].append(
+        {
+            "UserName": "AllAWSAccounts",
+            "GroupList": [],
+            "CreateDate": "2013-10-14T18:32:25Z",
+            "UserId": "AIDA1234567890AllAWSAccounts",
+            "UserPolicyList": [
+                {
+                    "PolicyName": "AdminAccess",
+                    "PolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": {
+                            "Effect": "Allow",
+                            "Action": "*",
+                            "Resource": "*"
+                        },
+                    }
+                }
+            ],
+            "Path": "/",
+            "AttachedManagedPolicies": [],
+            "Arn": "arn:aws:iam::000000000000:user/AllAWSAccounts"
+        },
+    )
+    resources = get_s3_bucket_resource_policy_data(neo4j_session, current_aws_account_id)
+
+    # Setup for iamspy - change cwd and remove existing artifacts
+    iamspy_dir = os.environ.get('CARTOGRAPHY_IAMSPY_DIRECTORY')
+    cwd = os.getcwd()
+    if iamspy_dir is not None:
+        os.chdir(iamspy_dir)
+    try:
+        os.remove("model.vars")
+    except OSError:
+        pass
+
+    model = Model()
+    model.load_gaad_json(gaad)
+    model.load_resource_policies_json(resources)
+    cleanup_s3_bucket_policy_access(neo4j_session, current_aws_account_id)
+    load_s3_bucket_policy_access(neo4j_session, model, resources, current_aws_account_id, update_tag)
+
+    for resource in resources:
+        logger.info(model.who_can("s3:GetObject", resource["Resource"]))
+
+    # Post-iamspy cleanup - change back cwd and remove existing artifacts
+    try:
+        os.remove("model.vars")
+    except OSError:
+        pass
+    if iamspy_dir is not None:
+        os.chdir(cwd)
+
+
 @timeit
 def sync(
     neo4j_session: neo4j.Session, boto3_session: boto3.session.Session, regions: List[str],
     current_aws_account_id: str, update_tag: int, common_job_parameters: Dict,
 ) -> None:
+    sync_iamspy_relationships(
+        neo4j_session,
+        boto3_session,
+        current_aws_account_id,
+        update_tag,
+        common_job_parameters,
+    )
+
     iam_principals = get_iam_principals_for_account(neo4j_session, current_aws_account_id)
 
     sync_admin_attributes(

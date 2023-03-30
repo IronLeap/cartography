@@ -61,6 +61,7 @@ setup(
         "flask>=2.1.0",
         "flask-executor>=1.0.0",
         "gunicorn>=20.1.0",
+        "zeuscloud-iamspy>=0.6.0",
     ],
     extras_require={
         ':python_version<"3.7"': [
