@@ -12,8 +12,6 @@ from typing import Tuple
 import boto3
 import json
 import neo4j
-import random
-import string
 import yaml
 
 from zeuscloud_iamspy import Model
@@ -591,6 +589,7 @@ def load_s3_bucket_policy_access(
     current_aws_account_id: str,
     update_tag: int,
 ) -> None:
+    # Create GenericAwsAccount node
     create_generic_aws_account_query = """
         MERGE (g:GenericAwsAccount)
         ON CREATE SET g.firstseen = timestamp(), 
@@ -601,6 +600,73 @@ def load_s3_bucket_policy_access(
         aws_update_tag=update_tag,
     )
 
+    # Create GenericS3Service node
+    create_generic_s3_service_query = """
+        MERGE (g:GenericS3Service)
+        ON CREATE SET g.firstseen = timestamp(), 
+        g.lastupdated = $aws_update_tag    
+    """
+    neo4j_session.run(
+        create_generic_s3_service_query,
+        aws_update_tag=update_tag,
+    )
+
+    # Address resource agnostic actions
+    for action in [
+        "s3:CreateBucket", 
+        "s3:ListAllMyBuckets", 
+    ]:
+        principal_has_policy_access_query = """
+            UNWIND $Principals as principal
+            MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(p:AWSPrincipal{arn:principal.Principal})
+            MATCH (g:GenericS3Service)
+            MERGE (p)-[r:HAS_POLICY_ACCESS]->(g)
+            ON CREATE SET r.firstseen = timestamp()
+            SET r.lastupdated = $aws_update_tag,
+            r.actions = principal.Actions
+        """
+
+        generic_aws_account_has_policy_access_query = """
+            MATCH (ga:GenericAwsAccount)
+            MATCH (gs:GenericS3Service)
+            MERGE (ga)-[r:HAS_POLICY_ACCESS]->(gs)
+            ON CREATE SET r.firstseen = timestamp()
+            SET r.lastupdated = $aws_update_tag,
+            r.actions = $Actions
+        """
+
+        principal_dct: Dict = {}
+        actions_allowed_by_all_accounts: List[str] = []
+        def mark_principal_and_action(principal:str, action: str):
+            if principal == "arn:aws:iam::000000000000:user/AllAWSAccounts":
+                actions_allowed_by_all_accounts.append(action)
+                return
+            if principal not in principal_dct:
+                principal_dct[principal] = {
+                    "Principal": principal,
+                    "Actions": []
+                }
+            principal_dct[principal]["Actions"].append(action)
+
+        able_principals = model.who_can(action, "arn:aws:s3:::")
+        for principal in able_principals:
+            mark_principal_and_action(principal, action)
+
+        neo4j_session.run(
+            principal_has_policy_access_query,
+            Principals=[principal for principal in principal_dct.values() if len(principal["Actions"]) > 0],
+            AccountId=current_aws_account_id,
+            aws_update_tag=update_tag,
+        )
+
+        neo4j_session.run(
+            generic_aws_account_has_policy_access_query,
+            Actions=actions_allowed_by_all_accounts,
+            aws_update_tag=update_tag,
+        )
+
+
+    # Address per-resource actions
     for resource in resources:
         principal_has_policy_access_query = """
             UNWIND $Principals as principal
