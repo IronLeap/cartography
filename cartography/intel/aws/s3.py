@@ -71,6 +71,7 @@ def get_s3_bucket_details(
         bucket_logging = get_bucket_logging(bucket, client)
         yield bucket['Name'], acl, policy, encryption, versioning, public_access_block, bucket_logging
 
+
 @timeit
 def get_policy(bucket: Dict, client: botocore.client.BaseClient) -> Optional[Dict]:
     """
@@ -150,6 +151,7 @@ def get_versioning(bucket: Dict, client: botocore.client.BaseClient) -> Optional
         )
     return versioning
 
+
 @timeit
 def get_account_public_access_block(boto3_session: boto3.session.Session, aws_account_id: str) -> Optional[Dict]:
     """
@@ -161,7 +163,8 @@ def get_account_public_access_block(boto3_session: boto3.session.Session, aws_ac
         public_access_block = client.get_public_access_block(AccountId=aws_account_id)
     except ClientError as e:
         logger.warning(
-            f"Failed to retrieve AWS Account public access block for {aws_account_id} with {e}")
+            f"Failed to retrieve AWS Account public access block for {aws_account_id} with {e}",
+        )
         if _is_account_exception(e):
             pass
     return public_access_block
@@ -208,6 +211,7 @@ def get_bucket_logging(bucket: Dict, client: botocore.client.BaseClient) -> Opti
         )
     return bucket_logging
 
+
 @timeit
 def _is_account_exception(e: Exception) -> bool:
     error_msg = "Failed to retrieve account public access block"
@@ -216,6 +220,7 @@ def _is_account_exception(e: Exception) -> bool:
         logger.warning(f"{error_msg} - NoSuchPublicAccessBlockConfiguration")
         return True
     return False
+
 
 @timeit
 def _is_common_exception(e: Exception, bucket: Dict) -> bool:
@@ -440,12 +445,13 @@ def _set_default_values(neo4j_session: neo4j.Session, aws_account_id: str) -> No
         AWS_ID=aws_account_id,
     )
 
+
 @timeit
 def load_account_public_access_block(
     neo4j_session: neo4j.Session,
     account_public_access_block: Optional[Dict],
     current_aws_account_id: str,
-    update_tag: int
+    update_tag: int,
 ) -> None:
 
     if account_public_access_block is None:
@@ -469,7 +475,7 @@ def load_account_public_access_block(
         ingest_account_public_access_block,
         AWS_ACCOUNT_ID=current_aws_account_id,
         aws_update_tag=update_tag,
-        public_access_block_settings=account_public_access_block['PublicAccessBlockConfiguration'] ,
+        public_access_block_settings=account_public_access_block['PublicAccessBlockConfiguration'],
     )
 
 
@@ -846,6 +852,11 @@ def cleanup_s3_bucket_acl_and_policy(neo4j_session: neo4j.Session, common_job_pa
 
 
 @timeit
+def cleanup_account_public_access_block(neo4j_session: neo4j.Session, common_job_parameters: Dict) -> None:
+    run_cleanup_job('aws_import_s3_account_public_access_block.json', neo4j_session, common_job_parameters)
+
+
+@timeit
 def sync(
     neo4j_session: neo4j.Session, boto3_session: boto3.session.Session, regions: List[str], current_aws_account_id: str,
     update_tag: int, common_job_parameters: Dict,
@@ -862,6 +873,7 @@ def sync(
 
     account_public_access_block = get_account_public_access_block(boto3_session, current_aws_account_id)
     load_account_public_access_block(neo4j_session, account_public_access_block, current_aws_account_id, update_tag)
+    cleanup_account_public_access_block(neo4j_session, common_job_parameters)
 
     merge_module_sync_metadata(
         neo4j_session,
