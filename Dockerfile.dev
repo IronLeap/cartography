@@ -13,7 +13,7 @@ COPY ./requirements.txt /srv/cartography/requirements.txt
 # Installs pip supported by python3.8
 RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3.8 get-pip.py
 
-RUN --mount=type=cache,target=/root/.cache \ 
+RUN --mount=type=cache,target=/root/.cache \
     pip install -r requirements.txt && \
     pip install -r test-requirements.txt
 
