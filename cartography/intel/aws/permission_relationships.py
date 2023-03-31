@@ -625,6 +625,8 @@ def load_s3_bucket_policy_access_to_bucket(
         "s3:GetBucketAcl",
         "s3:GetBucketPolicy",
         "s3:GetLifecycleConfiguration",
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
         "s3:PutObject",
         "s3:PutObjectAcl",
         "s3:PutBucketAcl",
