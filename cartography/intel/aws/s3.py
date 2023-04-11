@@ -278,6 +278,50 @@ def _load_s3_acls(neo4j_session: neo4j.Session, acls: Dict, aws_account_id: str,
         UpdateTag=update_tag,
     )
 
+    # Create GenericAwsAccount node
+    create_generic_aws_account_query = """
+        MERGE (g:GenericAwsAccount)
+        ON CREATE SET g.firstseen = timestamp(),
+        g.lastupdated = $aws_update_tag
+    """
+    neo4j_session.run(
+        create_generic_aws_account_query,
+        aws_update_tag=update_tag,
+    )
+    
+    mark_public_acls= """
+    MATCH (g:GenericAwsAccount), (s3:S3Bucket{id: $AclBucket})
+    MERGE (g)-[r:HAS_ACL_ACCESS]->(s3)
+    ON CREATE SET r.firstseen = timestamp()
+    SET r.lastupdated = $UpdateTag,
+    r.actions = $ActionsAllowed
+    """
+
+    # Loop through ACLs and create an edge. Accounting of 
+    # s3 acl bucket policies
+    for acl in acls:
+        if acl["uri"] in ['http://acs.amazonaws.com/groups/global/AuthenticatedUsers', 
+        'http://acs.amazonaws.com/groups/global/AllUsers']:
+            actionsAllowed = []
+            if acl["permission"] == 'READ': 
+                actionsAllowed = ['s3:ListBucket', 's3:ListBucketVersions']
+            elif acl["permission"] == 'WRITE':
+                actionsAllowed = ['s3:PutObject']
+            elif acl["permission"] == "READ_ACP":
+                actionsAllowed = ['s3:GetBucketAcl']
+            elif acl["permission"] == "WRITE_ACP": 
+                actionsAllowed = ['s3:PutBucketAcl']
+            else: 
+                actionsAllowed = ['s3:ListBucket', 's3:ListBucketVersions', 
+                                  's3:PutObject', 's3:GetBucketAcl', 
+                                  's3:PutBucketAcl']
+            neo4j_session.run(
+                mark_public_acls,
+                AclBucket=acl["bucket"],
+                UpdateTag=update_tag,
+                ActionsAllowed=actionsAllowed,
+            )
+ 
     # implement the acl permission
     # https://docs.aws.amazon.com/AmazonS3/latest/dev/acl-overview.html#permissions
     run_analysis_job(
