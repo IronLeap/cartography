@@ -812,7 +812,7 @@ def cleanup_principal_admin_attributes(
         AccountId=current_aws_account_id,
     )
 
-## TODO: Cleanup account effective admin
+## TODO: Cleanup account effective admin and relevant edges.
 def cleanup_account_effective_admin(neo4j_session, current_aws_account_id)->None: 
     logger.info("Cleaning up effective admin attributes")
 
@@ -1002,6 +1002,25 @@ def load_seed_admin_principals(
         principals=seed_admin_principals,
     )
 
+def set_effective_admin_access_to_iam_users_roles(neo4j_session: neo4j.Session, current_aws_account_id: str, 
+    update_tag: int) -> None:
+
+    set_effective_admin_to_principals_query = """
+    MATCH (effectiveAdmin:AWSEffectiveAdmin{id:$AccountId}) 
+    MATCH (owner:AWSAccount{id: $AccountId})-[RESOURCE]->(aPrincipal:AWSPrincipal)
+    WHERE aPrincipal:AWSUser OR aPrincipal:AWSRole
+    WITH effectiveAdmin, aPrincipal
+    MERGE (effectiveAdmin)-[r:EFFECTIVE_ADMIN_ACCESS]->(aPrincipal)
+    ON CREATE SET r.firstseen = timestamp()
+    SET r.lastupdated = $aws_update_tag
+    """
+    neo4j_session.run(
+        set_effective_admin_to_principals_query,
+        AccountId=current_aws_account_id,
+        aws_update_tag=update_tag,
+    )
+    return
+
 def set_effective_admin(neo4j_session: neo4j.Session, seed_admin_principals: List[Dict], 
     current_aws_account_id: str, update_tag: int) -> None:
     
@@ -1069,6 +1088,7 @@ def sync_admin_attributes(
     seed_admin_principals = calculate_seed_admin_principals(iam_principals)
     load_seed_admin_principals(neo4j_session, seed_admin_principals)
     set_effective_admin(neo4j_session, seed_admin_principals, current_aws_account_id, update_tag)
+    set_effective_admin_access_to_iam_users_roles(neo4j_session, current_aws_account_id, update_tag)
     set_remaining_admin_principals(neo4j_session, current_aws_account_id)
 
 
