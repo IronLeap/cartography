@@ -17,9 +17,3 @@ RUN pip install -r requirements.txt && \
     pip install -r test-requirements.txt
 
 COPY . /srv/cartography
-RUN groupadd cartography && \
-    useradd -s /bin/bash -d /home/cartography -m -g cartography cartography
-
-USER cartography
-
-RUN umask 0002
