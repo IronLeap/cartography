@@ -420,7 +420,7 @@ def load_roles(
     rnode.createdate = $CreateDate
     ON MATCH SET rnode.name = $RoleName, rnode.path = $Path
     SET rnode:AWSRole,
-    rnode.lastupdated = $aws_update_tag
+    rnode.lastupdated = $aws_update_tag, rnode.trust_policy=$TrustPolicy
     WITH rnode
     MATCH (aa:AWSAccount{id: $AWS_ACCOUNT_ID})
     MERGE (aa)-[r:RESOURCE]->(rnode)
@@ -468,6 +468,7 @@ def load_roles(
             CreateDate=str(role["CreateDate"]),
             RoleName=role["RoleName"],
             Path=role["Path"],
+            TrustPolicy = json.dumps(role["AssumeRolePolicyDocument"]),
             AWS_ACCOUNT_ID=current_aws_account_id,
             aws_update_tag=aws_update_tag,
         )
