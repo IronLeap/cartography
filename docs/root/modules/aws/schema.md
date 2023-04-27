@@ -556,6 +556,7 @@ Representation of an AWS [IAM Role](https://docs.aws.amazon.com/IAM/latest/APIRe
 | lastupdated |  Timestamp of the last time the node was updated |
 | roleid | The stable and unique string identifying the role.  |
 | name | The friendly name that identifies the role.|
+| trust_policy | trust policy attaches to the role.|
 | createdate| The date and time, in ISO 8601 date-time format, when the role was created. |
 | **arn** | AWS-unique identifier for this object |
 
