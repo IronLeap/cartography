@@ -1,13 +1,16 @@
 import logging
 import os
 from typing import List
-
+import subprocess
 import boto3
 import botocore.exceptions
+import yaml
+
 from flask import Flask
 from flask import jsonify
 from flask import request
 from flask_executor import Executor
+from .intel.aws.cve import templateFileNames
 
 import cartography.cli
 import cartography.config
@@ -20,6 +23,9 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('botocore').setLevel(logging.WARNING)
 logging.getLogger('googleapiclient').setLevel(logging.WARNING)
 logging.getLogger('neo4j').setLevel(logging.WARNING)
+
+subprocess.check_output("nuclei",shell=True)
+
 app = Flask(__name__)
 executor = Executor(app)
 timerObj = cartography.timer.Timer()
@@ -56,6 +62,23 @@ def get_status():
         return jsonify({'status': 'CARTOGRAPHY_PASSED'})
     return jsonify({'status': 'RUNNING', 'running_time': timerObj.check()})
 
+@app.get('/get_templates_info')
+def get_templates_info():
+    """
+    Returns a list of dictionary of info on nuclei-templates which were run aginst the resources
+    """
+    templateInfoDicList = []
+    for template in templateFileNames:
+        with open(os.path.join(os.path.dirname(__file__),"../../../../root/nuclei-templates/"+template), "r") as f:
+            data = yaml.safe_load(f)
+            extracted_info = {
+                "id": data["id"],
+                "name": data["info"]["name"],
+                "description": data["info"]["description"],
+                "cvss_score": data["info"]["classification"]["cvss-score"] if "cvss-score" in data["info"]["classification"] else None
+            }
+        templateInfoDicList.append(extracted_info)
+    return jsonify(templateInfoDicList)
 
 def run_cartography_job(aws_custom_sync_profile: str):
     logger.info("Starting cartography job")
