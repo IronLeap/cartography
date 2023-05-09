@@ -22,21 +22,21 @@ templateFileNamesStr = "dns/ptr-fingerprint.yaml,dns/cname-fingerprint.yaml,dns/
 #     aws_update_tag: int, common_job_parameters: Dict,
 # )->None:
 @timeit
-def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int)->None:
+def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int,current_aws_account_id:str)->None:
     publicly_exposed_query = """
-    OPTIONAL MATCH (ec2:EC2Instance) where ec2.publicipaddress is not null
+    OPTIONAL MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(ec2:EC2Instance) where ec2.publicipaddress is not null
     WITH collect({
         id: ID(ec2),
         publicDnsOrIp: ec2.publicipaddress,
         resourceType: "EC2Instance"
     })  as ec2Info
-    OPTIONAL MATCH (rds:RDSInstance {publicly_accessible:true})
+    OPTIONAL MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(rds:RDSInstance {publicly_accessible:true})
     WITH collect({
         id: ID(rds),
         publicDnsOrIp: rds.endpoint_address,
         resourceType: "RDSInstance"
     })  as rdsInfo,ec2Info
-    OPTIONAL MATCH (lbv2:LoadBalancerV2 {scheme:"internet-facing"})  
+    OPTIONAL MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(lbv2:LoadBalancerV2 {scheme:"internet-facing"})  
     WITH collect({
         id: ID(lbv2),
         publicDnsOrIp: lbv2.dnsname,
@@ -65,7 +65,10 @@ def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int)->None:
     r.matched_at=cve_result.`matched-at`
     """
 
-    records = neo4j_session.run(publicly_exposed_query)
+    records = neo4j_session.run(
+        publicly_exposed_query,
+        AccountId=current_aws_account_id
+    )
 
     for record in records:
         for resource in record["publiclyExposedResources"]:
@@ -105,5 +108,5 @@ def sync(
 ) -> None:
     logger.info("Syncing CVES for account '%s'",current_aws_account_id)
 
-    load_cves(neo4j_session,update_tag)
+    load_cves(neo4j_session,update_tag,current_aws_account_id)
     # TODO: cleanup job
