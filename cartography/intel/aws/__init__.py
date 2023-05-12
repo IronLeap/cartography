@@ -284,6 +284,8 @@ def start_aws_ingestion(neo4j_session: neo4j.Session, config: Config) -> None:
     requested_syncs: List[str] = list(RESOURCE_FUNCTIONS.keys())
     if config.aws_requested_syncs:
         requested_syncs = parse_and_validate_aws_requested_syncs(config.aws_requested_syncs)
+    if(config.exclude_cve_scan and "cve" in requested_syncs):
+        requested_syncs.remove('cve')
 
     sync_successful = _sync_multiple_accounts(
         neo4j_session,

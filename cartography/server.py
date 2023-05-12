@@ -1,6 +1,7 @@
+import json
 import logging
 import os
-from typing import List
+from typing import Dict, List
 import subprocess
 import boto3
 import botocore.exceptions
@@ -75,7 +76,8 @@ def get_templates_info():
                 "id": data["id"],
                 "name": data["info"]["name"],
                 "description": data["info"]["description"],
-                "cvss_score": data["info"]["classification"]["cvss-score"] if "cvss-score" in data["info"]["classification"] else None
+                "cvss_score": data["info"]["classification"]["cvss-score"] if "cvss-score" in data["info"]["classification"] else None,
+                "yaml_template": yaml.dump(data)
             }
         templateInfoDicList.append(extracted_info)
     return jsonify(templateInfoDicList)
@@ -83,11 +85,14 @@ def get_templates_info():
 def run_cartography_job(aws_custom_sync_profile: str):
     logger.info("Starting cartography job")
 
+    aws_custom_sync_profile_dct = json.loads(aws_custom_sync_profile)
     default_sync = cartography.sync.build_default_sync()
     cliObj = cartography.cli.CLI(default_sync, prog='cartography')
     args: List[str] = []
     if os.environ.get('CARTOGRAPHY_VERBOSE', "False") == "True":
         args.append('-v')
+    if aws_custom_sync_profile_dct["vulnerability_scan"]=="None":
+        args.append('--exclude-cve-scan')
     args.append(
         f'--neo4j-uri={os.environ.get("CARTOGRAPHY_NEO4J_URI", "bolt://localhost:7687")}',
     )
@@ -111,7 +116,6 @@ def start_job():
         parse_and_validate_aws_custom_sync_profile(request_text)
     except ValueError:
         return jsonify({'status': 'FAILED'})
-
     # Run job if not already started
     done_status = executor.futures.done('cartography_job')
     if done_status:
