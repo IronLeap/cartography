@@ -34,6 +34,15 @@ def parse_and_validate_aws_custom_sync_profile(aws_custom_sync_profile: str) -> 
         raise ValueError(
             'Error parsing aws_custom_sync_profile. account_name should be a valid string.',
         )
+    
+    # vulnerability_scan is mandatory
+    if 'vulnerability_scan' not in aws_custom_sync_profile_dct:
+        raise ValueError('Error parsing aws_custom_sync_profile. No valid vulnerability_scan.')
+    vulnerability_scan = aws_custom_sync_profile_dct['vulnerability_scan']
+    if type(vulnerability_scan) != str or len(vulnerability_scan) == 0:
+        raise ValueError(
+            'Error parsing aws_custom_sync_profile. vulnerability_scan should be a valid string.',
+        )
 
     # If profile present, it's sufficient to validate it
     if 'profile' in aws_custom_sync_profile_dct:

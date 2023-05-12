@@ -112,6 +112,13 @@ class CLI:
             ),
         )
         parser.add_argument(
+            '--exclude-cve-scan',
+            action='store_true',
+            help=(
+                'Runs CVE scans on publicly exposed resources'
+            ),
+        )
+        parser.add_argument(
             '--neo4j-clear-db',
             action='store_true',
             help=(

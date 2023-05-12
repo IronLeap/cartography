@@ -33,6 +33,8 @@ class Config:
     :type neo4j_clear_db: bool
     :param neo4j_clear_db: If True, nodes and relationships will be deleted before syncing. If False (default),
         nodes and relationships will carry over.
+    :type exclude_cve_scan: bool
+    :param exclude_cve_scan: If True CVEs will not be scanned. If False (default) CVEs will be scanned.
     :type azure_sync_all_subscriptions: bool
     :param azure_sync_all_subscriptions: If True, Azure sync will run for all profiles in azureProfile.json. If
         False (default), Azure sync will run using current user session via CLI credentials. Optional.
@@ -132,6 +134,7 @@ class Config:
         crowdstrike_client_id=None,
         crowdstrike_client_secret=None,
         crowdstrike_api_url=None,
+        exclude_cve_scan=False,
     ):
         self.neo4j_uri = neo4j_uri
         self.neo4j_user = neo4j_user
@@ -174,3 +177,4 @@ class Config:
         self.crowdstrike_client_id = crowdstrike_client_id
         self.crowdstrike_client_secret = crowdstrike_client_secret
         self.crowdstrike_api_url = crowdstrike_api_url
+        self.exclude_cve_scan = exclude_cve_scan
