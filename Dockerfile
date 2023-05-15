@@ -16,6 +16,14 @@ RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && python3.8 get-pip
 RUN pip install -r requirements.txt && \
     pip install -r test-requirements.txt
 
-RUN wget -q https://github.com/projectdiscovery/nuclei/releases/download/v2.9.2/nuclei_2.9.2_linux_arm64.zip -O nuclei.zip && unzip nuclei.zip -d /usr/local/bin/ && rm nuclei.zip
-
+ARG BUILDARCH
+RUN if [ "$BUILDARCH" = "arm64" ]; \
+    then \
+      wget -q https://github.com/projectdiscovery/nuclei/releases/download/v2.9.4/nuclei_2.9.4_linux_arm64.zip -O nuclei.zip; \
+    else \
+      wget -q https://github.com/projectdiscovery/nuclei/releases/download/v2.9.4/nuclei_2.9.4_linux_amd64.zip -O nuclei.zip; \
+    fi \
+    && unzip nuclei.zip -d /usr/local/bin/ \
+    && rm nuclei.zip
+    
 COPY . /srv/cartography
