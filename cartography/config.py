@@ -30,9 +30,6 @@ class Config:
     :type aws_sync_all_profiles: bool
     :param aws_sync_all_profiles: If True, AWS sync will run for all non-default profiles in the AWS_CONFIG_FILE. If
         False (default), AWS sync will run using the default credentials only. Optional.
-    :type neo4j_clear_db: bool
-    :param neo4j_clear_db: If True, nodes and relationships will be deleted before syncing. If False (default),
-        nodes and relationships will carry over.
     :type azure_sync_all_subscriptions: bool
     :param azure_sync_all_subscriptions: If True, Azure sync will run for all profiles in azureProfile.json. If
         False (default), Azure sync will run using current user session via CLI credentials. Optional.
@@ -96,7 +93,6 @@ class Config:
         neo4j_password=None,
         neo4j_max_connection_lifetime=None,
         neo4j_database=None,
-        neo4j_clear_db=False,
         update_tag=None,
         aws_custom_sync_profile_dct=None,
         aws_sync_all_profiles=False,
@@ -138,7 +134,6 @@ class Config:
         self.neo4j_password = neo4j_password
         self.neo4j_max_connection_lifetime = neo4j_max_connection_lifetime
         self.neo4j_database = neo4j_database
-        self.neo4j_clear_db = neo4j_clear_db
         self.update_tag = update_tag
         self.aws_custom_sync_profile_dct = aws_custom_sync_profile_dct
         self.aws_sync_all_profiles = aws_sync_all_profiles

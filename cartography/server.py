@@ -46,8 +46,16 @@ def get_status():
     Returns status of job: READY if job can be started or RUNNING.
     """
     done_status = executor.futures.done('cartography_job')
-    if done_status is None or done_status:
+    
+    
+    if done_status is None:
         return jsonify({'status': 'READY'})
+    if done_status:
+        job_exception = executor.futures.exception('cartography_job')
+        logger.info(f"exception = {job_exception}")
+        if job_exception:
+            return jsonify({'status': 'FAILED'})
+        return jsonify({'status': 'CARTOGRAPHY_PASSED'})
     return jsonify({'status': 'RUNNING', 'running_time': timerObj.check()})
 
 
@@ -56,7 +64,7 @@ def run_cartography_job(aws_custom_sync_profile: str):
 
     default_sync = cartography.sync.build_default_sync()
     cliObj = cartography.cli.CLI(default_sync, prog='cartography')
-    args: List[str] = ['--neo4j-clear-db']
+    args: List[str] = []
     if os.environ.get('CARTOGRAPHY_VERBOSE', "False") == "True":
         args.append('-v')
     args.append(
