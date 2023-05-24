@@ -46,14 +46,12 @@ def get_status():
     Returns status of job: READY if job can be started or RUNNING.
     """
     done_status = executor.futures.done('cartography_job')
-    
-    
     if done_status is None:
         return jsonify({'status': 'READY'})
     if done_status:
         job_exception = executor.futures.exception('cartography_job')
-        logger.info(f"exception = {job_exception}")
         if job_exception:
+            logger.info(f"exception = {job_exception}")
             return jsonify({'status': 'FAILED'})
         return jsonify({'status': 'CARTOGRAPHY_PASSED'})
     return jsonify({'status': 'RUNNING', 'running_time': timerObj.check()})
