@@ -70,7 +70,7 @@ def get_templates_info():
                 "id": data["id"],
                 "name": data["info"]["name"],
                 "description": data["info"]["description"],
-                "cvss_score": data["info"]["classification"]["cvss-score"] if "cvss-score" in data["info"]["classification"] else None,
+                "cvss_score": data["info"]["classification"]["cvss-score"] if "cvss-score" in (data["info"]["classification"] if "classification" in data["info"] else {}) else None,
                 "yaml_template": yaml.dump(data)
             }
         templateInfoDicList.append(extracted_info)
