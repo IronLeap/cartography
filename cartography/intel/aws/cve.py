@@ -1,4 +1,5 @@
 import boto3
+from cartography.util import run_cleanup_job
 import neo4j
 import logging
 import json
@@ -14,13 +15,11 @@ from cartography.util import timeit
 
 logger = logging.getLogger(__name__)
 
-templateFileNames = ["dns/ptr-fingerprint.yaml","dns/cname-fingerprint.yaml","dns/ec2-detection.yaml"]
-templateFileNamesStr = "dns/ptr-fingerprint.yaml,dns/cname-fingerprint.yaml,dns/ec2-detection.yaml"
+# templateFileNames = ["dns/ptr-fingerprint.yaml","dns/cname-fingerprint.yaml","dns/ec2-detection.yaml"]
+# templateFileNamesStr = "dns/ptr-fingerprint.yaml,dns/cname-fingerprint.yaml,dns/ec2-detection.yaml"
+templateFileNames = ["http/cves/2022/CVE-2022-42233.yaml","http/cves/2023/CVE-2023-27179.yaml","http/cves/2022/CVE-2022-45933.yaml","http/cves/2023/CVE-2023-1020.yaml","http/cves/2023/CVE-2023-1177.yaml","http/cves/2023/CVE-2023-1671.yaml","http/cves/2023/CVE-2023-20864.yaml","http/cves/2023/CVE-2023-23488.yaml","http/cves/2023/CVE-2023-23489.yaml","http/cves/2023/CVE-2023-25135.yaml"]
+templateFileNamesStr = "http/cves/2022/CVE-2022-42233.yaml,http/cves/2023/CVE-2023-27179.yaml,http/cves/2022/CVE-2022-45933.yaml,http/cves/2023/CVE-2023-1020.yaml,http/cves/2023/CVE-2023-1177.yaml,http/cves/2023/CVE-2023-1671.yaml,http/cves/2023/CVE-2023-20864.yaml,http/cves/2023/CVE-2023-23488.yaml,http/cves/2023/CVE-2023-23489.yaml,http/cves/2023/CVE-2023-25135.yaml"
 
-# def sync_cves(
-#         neo4j_session: neo4j.Session, current_aws_account_id: str,
-#     aws_update_tag: int, common_job_parameters: Dict,
-# )->None:
 @timeit
 def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int,current_aws_account_id:str)->None:
     publicly_exposed_query = """
@@ -75,15 +74,15 @@ def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int,current_aws_accoun
             if (
                 "publicDnsOrIp" not in resource 
                 or "id" not in resource 
-                or resource['publicDnsOrIp']=="null" 
+                or resource['publicDnsOrIp']==None 
                 or resource['publicDnsOrIp']==""
             ):
                 continue
             
             logger.info(f"Syncing CVE for resource: {resource['publicDnsOrIp']}")
 
-            cmd = f"nuclei -t {templateFileNamesStr} -silent -u https://{resource['publicDnsOrIp']}/ -jsonl"
-
+            cmd = f"nuclei -t {templateFileNamesStr} -silent -u http://{resource['publicDnsOrIp']}/ -jsonl"
+            
             output = subprocess.check_output(cmd, shell=True)
 
             # Split the output into lines and parse each line as a separate JSON object
@@ -100,6 +99,10 @@ def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int,current_aws_accoun
                 aws_update_tag=aws_update_tag,
             )
 
+@timeit
+def cleanup_cves(neo4j_session: neo4j.Session, common_job_parameters: Dict) -> None:
+    run_cleanup_job('aws_ingest_cves_cleanup.json', neo4j_session, common_job_parameters)
+
 
 @timeit
 def sync(
@@ -109,4 +112,5 @@ def sync(
     logger.info("Syncing CVES for account '%s'",current_aws_account_id)
 
     load_cves(neo4j_session,update_tag,current_aws_account_id)
-    # TODO: cleanup job
+    cleanup_cves(neo4j_session, common_job_parameters)
+
