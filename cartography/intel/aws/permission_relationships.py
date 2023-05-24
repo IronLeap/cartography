@@ -756,18 +756,37 @@ def cleanup_s3_bucket_policy_access(
     neo4j_session: neo4j.Session, current_aws_account_id: str,
 ) -> None:
     logger.info("Cleaning up s3 bucket policy access")
-    cleanup_query = """
+    cleanup_policy_access_to_S3 = """
         MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(s:S3Bucket)
         MATCH ()-[r:HAS_POLICY_ACCESS]->(s)
-        WITH r LIMIT $LIMIT_SIZE DELETE (r) return COUNT(*) as TotalCompleted
+        WITH r LIMIT $LIMIT_SIZE 
+        DELETE r
+        RETURN COUNT(*) as TotalCompleted
+     """
+    
+    cleanup_policy_access_principal_to_GS3Service = """
+        MATCH (:AWSAccount{id:$AccountId})-[:RESOURCE]->(p:AWSPrincipal)
+        MATCH (p)-[r:HAS_POLICY_ACCESS]->(gS3:GenericS3Service)
+        WITH r LIMIT $LIMIT_SIZE 
+        DELETE r
+        RETURN COUNT(*) as TotalCompleted
+    
     """
-    statement = GraphStatement(
-        cleanup_query,
+
+    S3PolicyAcessStatement = GraphStatement(
+        cleanup_policy_access_to_S3,
         {'AccountId': current_aws_account_id},
         True,
         1000,
     )
-    statement.run(neo4j_session)
+    PrincipalToGS3ServiceStatement = GraphStatement(
+        cleanup_policy_access_principal_to_GS3Service,
+        {'AccountId': current_aws_account_id},
+        True,
+        1000,
+    )
+    S3PolicyAcessStatement.run(neo4j_session)
+    PrincipalToGS3ServiceStatement.run(neo4j_session)
 
 
 def load_principal_mappings(
@@ -805,7 +824,7 @@ def cleanup_principal_admin_attributes(
         MATCH
         (acc:AWSAccount{id:$AccountId})-[:RESOURCE]->
         (principal:AWSPrincipal)
-        SET principal.is_admin = NULL, principal.admin_reason = NULL
+        SET principal.is_admin = NULL, principal.admin_reason = NULL, principal.is_seed_admin = NULL
     """
     neo4j_session.run(
         admin_cleanup_query,
@@ -815,6 +834,14 @@ def cleanup_principal_admin_attributes(
 ## TODO: Cleanup account effective admin and relevant edges.
 def cleanup_account_effective_admin(neo4j_session, current_aws_account_id)->None: 
     logger.info("Cleaning up effective admin attributes")
+    effective_admin_cleanup_query = """
+        MATCH (effectiveAdmin:AWSEffectiveAdmin{id:$AccountId})
+        DETACH DELETE effectiveAdmin
+    """
+    neo4j_session.run(
+        effective_admin_cleanup_query,
+        AccountId=current_aws_account_id,
+    )
 
 def cleanup_principal_high_attributes(
     neo4j_session: neo4j.Session,
@@ -825,7 +852,7 @@ def cleanup_principal_high_attributes(
         MATCH
         (acc:AWSAccount{id:$AccountId})-[:RESOURCE]->
         (principal:AWSPrincipal)
-        SET principal.is_high = NULL, principal.high_reason = NULL
+        SET principal.is_high = NULL, principal.high_reason = NULL, principal.is_seed_high = NULL
     """
     neo4j_session.run(
         admin_cleanup_query,

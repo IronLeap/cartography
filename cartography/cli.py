@@ -111,13 +111,6 @@ class CLI:
                 'See https://neo4j.com/docs/api/python-driver/4.4/api.html#database.'
             ),
         )
-        parser.add_argument(
-            '--neo4j-clear-db',
-            action='store_true',
-            help=(
-                'Delete nodes and relationships in the db before syncing.'
-            ),
-        )
         # TODO add the below parameters to a 'sync' subparser
         parser.add_argument(
             '--update-tag',
