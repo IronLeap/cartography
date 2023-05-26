@@ -119,6 +119,7 @@ def _load_ec2_instance_tx(
         launch_time: datetime,
         launch_time_unix: str,
         instance_state: str,
+        is_imdsv1_enabled: bool,
         current_aws_account_id: str,
         region: str,
         update_tag: int,
@@ -134,6 +135,7 @@ def _load_ec2_instance_tx(
             instance.instancetype = $InstanceType,
             instance.monitoringstate = $MonitoringState,
             instance.state = $State,
+            instance.isimdsv1enabled = $IsIMDSV1Enabled,
             instance.launchtime = $LaunchTime,
             instance.launchtimeunix = $LaunchTimeUnix,
             instance.region = $Region,
@@ -184,6 +186,7 @@ def _load_ec2_instance_tx(
         LaunchTime=str(launch_time),
         LaunchTimeUnix=launch_time_unix,
         State=instance_state,
+        IsIMDSV1Enabled=is_imdsv1_enabled,
         AvailabilityZone=instance.get("Placement", {}).get("AvailabilityZone"),
         Tenancy=instance.get("Placement", {}).get("Tenancy"),
         HostResourceGroupArn=instance.get("Placement", {}).get("HostResourceGroupArn"),
@@ -312,6 +315,12 @@ def load_ec2_instances(
 
             instance_state = instance.get("State", {}).get("Name")
 
+            http_tokens = instance.get("MetadataOptions", {}).get("HttpTokens")
+            if http_tokens == "required":
+                is_imdsv1_enabled = False
+            else:
+                is_imdsv1_enabled = True
+
             # NOTE this is a hack because we're using a version of Neo4j that doesn't support temporal data types
             launch_time = instance.get("LaunchTime")
             if launch_time:
@@ -328,6 +337,7 @@ def load_ec2_instances(
                 launch_time,
                 launch_time_unix,
                 instance_state,
+                is_imdsv1_enabled,
                 current_aws_account_id,
                 region,
                 update_tag,
