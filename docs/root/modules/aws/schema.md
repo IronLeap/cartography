@@ -1121,6 +1121,7 @@ Our representation of an AWS [EC2 Instance](https://docs.aws.amazon.com/AWSEC2/l
 | launchtime | The time the instance was launched |
 | monitoringstate | Whether monitoring is enabled.  Valid Values: disabled, disabling, enabled,  pending. |
 | state | The [current state](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_InstanceState.html) of the instance.
+| isimdsv1enabled | if imdsv1 is enabled for the instance
 | launchtimeunix | The time the instance was launched in unix time |
 | region | The AWS region this Instance is running in|
 | exposed\_internet |  The `exposed_internet` flag on an EC2 instance is set to `True` when (1) the instance is part of an EC2 security group or is connected to a network interface connected to an EC2 security group that allows connectivity from the 0.0.0.0/0 subnet or (2) the instance is connected to an Elastic Load Balancer that has its own `exposed_internet` flag set to `True`. |
