@@ -1217,14 +1217,17 @@ def sync_iamspy_relationships(
     except OSError:
         pass
 
-    model = Model()
-    model.load_gaad_json(gaad)
-    model.load_resource_policies_json(resources)
-    cleanup_s3_bucket_policy_access(neo4j_session, current_aws_account_id)
-    load_s3_bucket_policy_access(neo4j_session, model, resources, current_aws_account_id, update_tag)
+    try:
+        model = Model()
+        model.load_gaad_json(gaad)
+        model.load_resource_policies_json(resources)
+        cleanup_s3_bucket_policy_access(neo4j_session, current_aws_account_id)
+        load_s3_bucket_policy_access(neo4j_session, model, resources, current_aws_account_id, update_tag)
 
-    for resource in resources:
-        logger.info(model.who_can("s3:GetObject", resource["Resource"]))
+        for resource in resources:
+            logger.info(model.who_can("s3:GetObject", resource["Resource"]))
+    except Exception as e:
+        logger.warning("IamSpy error encountered: {}. Skipping...".format(e))
 
     # Post-iamspy cleanup - change back cwd and remove existing artifacts
     try:

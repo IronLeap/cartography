@@ -29,4 +29,4 @@ crowdstrike-falconpy>=0.5.1
 flask>=2.1.0
 flask-executor>=1.0.0
 gunicorn>=20.1.0
-zeuscloud-iamspy>=0.6.0
+zeuscloud-iamspy>=0.8.0
