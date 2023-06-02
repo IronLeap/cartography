@@ -1,0 +1,9 @@
+{
+    "statements": [{
+        "query": "MATCH (:AWSAccount{id: $AWS_ID})-[:RESOURCE]->(finding:GuardDutyFinding) WHERE finding.lastupdated <> $UPDATE_TAG WITH finding LIMIT $LIMIT_SIZE DETACH DELETE (finding)",
+        "iterative": true,
+        "iterationsize": 100
+      }],
+    "name": "cleanup GuardDuty Findings"
+  }
+
