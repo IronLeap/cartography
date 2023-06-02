@@ -195,6 +195,7 @@ def aws_handle_regions(func: AWSGetFunc) -> AWSGetFunc:
         'InvalidClientTokenId',
         'UnrecognizedClientException',
         'InternalServerErrorException',
+        'UnauthorizedOperation',
     ]
 
     @wraps(func)
