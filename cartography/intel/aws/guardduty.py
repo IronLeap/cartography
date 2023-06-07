@@ -57,7 +57,9 @@ def load_guardduty_findings(
     ON CREATE SET f.firstseen = timestamp()
     SET f.lastupdated = $update_tag,
     f.id = finding.Id,
-    f.confidence = finding.Confidence,
+    f.severity = finding.Severity,
+    f.title = finding.Title,
+    f.type = finding.Type,
     f.created_at = finding.CreatedAt,
     f.description = finding.Description
     WITH f,finding
