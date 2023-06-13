@@ -43,9 +43,17 @@ def parse_and_validate_aws_custom_sync_profile(aws_custom_sync_profile: str) -> 
                 'Error parsing aws_custom_sync_profile. profile should be a valid string.',
             )
         return aws_custom_sync_profile_dct
+    
+    if 'region_names' not in aws_custom_sync_profile_dct:
+         raise ValueError('Error parsing aws_custom_sync_profile. No valid region_names paramter.')
+    region_names = aws_custom_sync_profile_dct['region_names']
+    if type(region_names) != List[str]:
+        raise ValueError(
+        'Error parsing aws_custom_sync_profile. region_names should be a valid list of strings.',
+    )
 
-    # Otherwise, must validate aws_access_key_id, aws_secret_access_key, and default_region
-    for key in ['aws_access_key_id', 'aws_secret_access_key', 'default_region']:
+    # Otherwise, must validate aws_access_key_id and aws_secret_access_key
+    for key in ['aws_access_key_id', 'aws_secret_access_key']:
         if key not in aws_custom_sync_profile_dct:
             raise ValueError(f'Error parsing aws_custom_sync_profile. No valid {key}.')
         value = aws_custom_sync_profile_dct[key]

@@ -129,7 +129,7 @@ class CLI:
             help=(
                 'Enable AWS sync with custom credentials. If enabled, cartography will attempt to execute the sync '
                 'with the supplied credentials and not those found in AWS_CONFIG_FILE. The format of the string is '
-                'a JSON string with account_name, aws_access_key_id, aws_secret_access_key, default_region fields.'
+                'a JSON string with account_name, aws_access_key_id, aws_secret_access_key fields.'
             ),
         )
         parser.add_argument(
