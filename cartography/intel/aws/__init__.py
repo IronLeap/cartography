@@ -45,11 +45,12 @@ def _sync_one_account(
     current_aws_account_id: str,
     update_tag: int,
     common_job_parameters: Dict[str, Any],
+    selected_region_names: List[str],
     regions: List[str] = [],
     aws_requested_syncs: Iterable[str] = RESOURCE_FUNCTIONS.keys(),
 ) -> None:
     if not regions:
-        regions = _autodiscover_account_regions(boto3_session, current_aws_account_id)
+        regions = _autodiscover_account_regions(boto3_session, current_aws_account_id, selected_region_names)
 
     sync_args = _build_aws_sync_kwargs(
         neo4j_session, boto3_session, regions, current_aws_account_id, update_tag, common_job_parameters,
@@ -89,10 +90,12 @@ def _sync_one_account(
     )
 
 
-def _autodiscover_account_regions(boto3_session: boto3.session.Session, account_id: str) -> List[str]:
-    regions: List[str] = []
+def _autodiscover_account_regions(boto3_session: boto3.session.Session, account_id: str, selected_region_names: List[str]) -> List[str]:
+    common_regions: List[str] 
+    valid_regions: List[str] = []
     try:
-        regions = ec2.get_ec2_regions(boto3_session)
+        valid_regions = ec2.get_ec2_regions(boto3_session)
+        common_regions = list(set(valid_regions) & set(selected_region_names))
     except botocore.exceptions.ClientError as e:
         logger.debug("Error occurred getting EC2 regions.", exc_info=True)
         logger.error(
@@ -103,7 +106,10 @@ def _autodiscover_account_regions(boto3_session: boto3.session.Session, account_
             account_id,
         )
         raise
-    return regions
+    # return aws discovered regions when All Regions is selected or no region is selected
+    if (len(selected_region_names)==1 and selected_region_names[0]=="All Regions") or len(selected_region_names)==0:
+        return valid_regions
+    return common_regions
 
 
 def _autodiscover_accounts(
@@ -150,7 +156,10 @@ def _sync_multiple_accounts(
     for profile_name, account_id in accounts.items():
         logger.info("Syncing AWS account with ID '%s' using configured profile '%s'.", account_id, profile_name)
         common_job_parameters["AWS_ID"] = account_id
+        selected_region_names:List[str] = []
         if profile_name in custom_aws_account_creds:
+            if "region_names" in custom_aws_account_creds[profile_name]:
+                selected_region_names = custom_aws_account_creds[profile_name]["region_names"]
             if "profile" in custom_aws_account_creds[profile_name]:
                 boto3_session = boto3.Session(
                     profile_name=custom_aws_account_creds[profile_name]["profile"],
@@ -159,8 +168,11 @@ def _sync_multiple_accounts(
                 boto3_session = boto3.Session(
                     aws_access_key_id=custom_aws_account_creds[profile_name]["aws_access_key_id"],
                     aws_secret_access_key=custom_aws_account_creds[profile_name]["aws_secret_access_key"],
-                    region_name=custom_aws_account_creds[profile_name]["default_region"],
+                    region_name = 'us-east-1' 
+                    if (len(selected_region_names)==1 and selected_region_names[0]=="All Regions") or len(selected_region_names)==0 
+                    else selected_region_names[0]
                 )
+            
         elif num_accounts == 1:
             # Use the default boto3 session because boto3 gets confused if you give it a profile name with 1 account
             boto3_session = boto3.Session()
@@ -176,6 +188,7 @@ def _sync_multiple_accounts(
                 account_id,
                 sync_tag,
                 common_job_parameters,
+                selected_region_names,
                 aws_requested_syncs=aws_requested_syncs,  # Could be replaced later with per-account requested syncs
             )
         except Exception as e:
@@ -215,10 +228,15 @@ def start_aws_ingestion(neo4j_session: neo4j.Session, config: Config) -> None:
                 profile_name=config.aws_custom_sync_profile_dct["profile"],
             )
         elif config.aws_custom_sync_profile_dct:
+            selected_region_names:List[str] = []
+            if "region_names" in config.aws_custom_sync_profile_dct:
+                selected_region_names = config.aws_custom_sync_profile_dct["region_names"]
             boto3_session = boto3.Session(
                 aws_access_key_id=config.aws_custom_sync_profile_dct["aws_access_key_id"],
                 aws_secret_access_key=config.aws_custom_sync_profile_dct["aws_secret_access_key"],
-                region_name=config.aws_custom_sync_profile_dct["default_region"],
+                region_name = 'us-east-1' 
+                if (len(selected_region_names)==1 and selected_region_names[0]=="All Regions") or len(selected_region_names)==0 
+                else selected_region_names[0]
             )
         else:
             boto3_session = boto3.Session()

@@ -24,9 +24,9 @@ class Config:
         exceptions will be raised.
     :type update_tag: int
     :param update_tag: Update tag for a cartography sync run. Optional.
-    :type aws_custom_sync_profile_dct: Dict[str, str]
+    :type aws_custom_sync_profile_dct: Dict[str, any]
     :param aws_custom_sync_profile_dct: Dict with account_name, aws_access_key_id, aws_secret_access_key,
-        default_region, profile. Optional.
+        region_names, profile. Optional.
     :type aws_sync_all_profiles: bool
     :param aws_sync_all_profiles: If True, AWS sync will run for all non-default profiles in the AWS_CONFIG_FILE. If
         False (default), AWS sync will run using the default credentials only. Optional.
