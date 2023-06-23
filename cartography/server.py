@@ -1,13 +1,17 @@
+import json
 import logging
 import os
-from typing import List
-
+from typing import Dict, List
+import subprocess
 import boto3
 import botocore.exceptions
+import yaml
+
 from flask import Flask
 from flask import jsonify
 from flask import request
 from flask_executor import Executor
+from .intel.aws.cve import templateFileNames
 
 import cartography.cli
 import cartography.config
@@ -20,6 +24,9 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger('botocore').setLevel(logging.WARNING)
 logging.getLogger('googleapiclient').setLevel(logging.WARNING)
 logging.getLogger('neo4j').setLevel(logging.WARNING)
+
+subprocess.check_output("nuclei",shell=True)
+
 app = Flask(__name__)
 executor = Executor(app)
 timerObj = cartography.timer.Timer()
@@ -56,15 +63,36 @@ def get_status():
         return jsonify({'status': 'CARTOGRAPHY_PASSED'})
     return jsonify({'status': 'RUNNING', 'running_time': timerObj.check()})
 
+@app.get('/get_templates_info')
+def get_templates_info():
+    """
+    Returns a list of dictionary of info on nuclei-templates which were run aginst the resources
+    """
+    templateInfoDicList = []
+    for template in templateFileNames:
+        with open(os.path.join(os.path.dirname(__file__),"../../../../root/nuclei-templates/"+template), "r") as f:
+            data = yaml.safe_load(f)
+            extracted_info = {
+                "id": data["id"],
+                "name": data["info"]["name"],
+                "description": data["info"]["description"],
+                "cvss_score": data["info"]["classification"]["cvss-score"] if "cvss-score" in (data["info"]["classification"] if "classification" in data["info"] else {}) else None,
+                "yaml_template": yaml.dump(data)
+            }
+        templateInfoDicList.append(extracted_info)
+    return jsonify(templateInfoDicList)
 
 def run_cartography_job(aws_custom_sync_profile: str):
     logger.info("Starting cartography job")
 
+    aws_custom_sync_profile_dct = json.loads(aws_custom_sync_profile)
     default_sync = cartography.sync.build_default_sync()
     cliObj = cartography.cli.CLI(default_sync, prog='cartography')
     args: List[str] = []
     if os.environ.get('CARTOGRAPHY_VERBOSE', "False") == "True":
         args.append('-v')
+    if aws_custom_sync_profile_dct["vulnerability_scan"]=="None":
+        args.append('--exclude-cve-scan')
     args.append(
         f'--neo4j-uri={os.environ.get("CARTOGRAPHY_NEO4J_URI", "bolt://localhost:7687")}',
     )
@@ -88,7 +116,6 @@ def start_job():
         parse_and_validate_aws_custom_sync_profile(request_text)
     except ValueError:
         return jsonify({'status': 'FAILED'})
-
     # Run job if not already started
     done_status = executor.futures.done('cartography_job')
     if done_status:

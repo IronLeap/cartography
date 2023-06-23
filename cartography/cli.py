@@ -111,6 +111,13 @@ class CLI:
                 'See https://neo4j.com/docs/api/python-driver/4.4/api.html#database.'
             ),
         )
+        parser.add_argument(
+            '--exclude-cve-scan',
+            action='store_true',
+            help=(
+                'Runs CVE scans on publicly exposed resources'
+            ),
+        )
         # TODO add the below parameters to a 'sync' subparser
         parser.add_argument(
             '--update-tag',
