@@ -30,3 +30,4 @@ flask>=2.1.0
 flask-executor>=1.0.0
 gunicorn>=20.1.0
 zeuscloud-iamspy>=0.8.0
+pydantic<=1.10.9
