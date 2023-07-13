@@ -47,7 +47,7 @@ def load_cves(neo4j_session: neo4j.Session,aws_update_tag:int,current_aws_accoun
 
     ingest_cve = """
     UNWIND $CVEResults as cve_result
-    MERGE (cve:CVE {template_id:cve_result.`template-id`})
+    MERGE (cve:CVE:NUCLEI {template_id:cve_result.`template-id`})
     ON CREATE SET cve.firstseen = timestamp()
     SET cve.name=cve_result.info.name,
     cve.cvss_score=cve_result.classification.`cvss-score`,

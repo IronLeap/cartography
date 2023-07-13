@@ -70,38 +70,36 @@ def transform_inspector_findings(results: List[Dict]) -> Tuple[List, List]:
 
         finding['id'] = f['findingArn']
         finding['arn'] = f['findingArn']
-        finding['severity'] = f['severity']
+        finding['severity'] = f['severity'].lower()
         finding['name'] = f['title']
         finding['firstobservedat'] = f['firstObservedAt']
-        finding['updatedat'] = f['updatedAt']
         finding['awsaccount'] = f['awsAccountId']
         finding['description'] = f['description']
         finding['type'] = f['type']
         finding['status'] = f['status']
         if f.get('inspectorScoreDetails'):
             finding['cvssscore'] = f['inspectorScoreDetails']['adjustedCvss']['score']
-        if f['resources'][0]['type'] == "AWS_EC2_INSTANCE":
-            finding['instanceid'] = f['resources'][0]['id']
-        if f['resources'][0]['type'] == "AWS_ECR_CONTAINER_IMAGE":
-            finding['ecrimageid'] = f['resources'][0]['id']
-        if f['resources'][0]['type'] == "AWS_ECR_REPOSITORY":
-            finding['ecrrepositoryid'] = f['resources'][0]['id']
+        finding["resources"] = []
+        for resource in f["resources"]:
+            resourceDic: Dict={"type": resource["type"]}
+
+            if resource['type'] == "AWS_EC2_INSTANCE":
+                resourceDic["instanceid"] = resource['id']
+            elif resource['type'] == "AWS_ECR_CONTAINER_IMAGE":
+                resourceDic['ecrimageid'] = resource['id']
+            elif resource['type'] == "AWS_ECR_REPOSITORY":
+                resourceDic['ecrrepositoryid'] = resource['id']
+            elif resource['type'] == "AWS_LAMBDA_FUNCTION":
+                resourceDic['lambdaid'] = resource['id']
+            finding["resources"].append(resourceDic)
         if f.get('networkReachabilityDetails'):
             finding['protocol'] = f['networkReachabilityDetails']['protocol']
             finding['portrangebegin'] = f['networkReachabilityDetails']['openPortRange']['begin']
             finding['portrangeend'] = f['networkReachabilityDetails']['openPortRange']['end']
-            finding['portrange'] = _port_range_string(f['networkReachabilityDetails'])
         if f.get('packageVulnerabilityDetails'):
             finding['vulnerabilityid'] = f['packageVulnerabilityDetails']['vulnerabilityId']
             finding['referenceurls'] = f['packageVulnerabilityDetails'].get('referenceUrls')
-            finding['relatedvulnerabilities'] = f['packageVulnerabilityDetails'].get('relatedVulnerabilities')
-            finding['source'] = f['packageVulnerabilityDetails'].get('source')
-            finding['sourceurl'] = f['packageVulnerabilityDetails'].get('sourceUrl')
-            finding['vendorcreatedat'] = f['packageVulnerabilityDetails'].get('vendorCreatedAt')
-            finding['vendorseverity'] = f['packageVulnerabilityDetails'].get('vendorSeverity')
-            finding['vendorupdatedat'] = f['packageVulnerabilityDetails'].get('vendorUpdatedAt')
-
-            new_packages = _process_packages(f['packageVulnerabilityDetails'], f['awsAccountId'], f['findingArn'])
+            new_packages = _process_packages(f['packageVulnerabilityDetails'], f['findingArn'])
             finding['vulnerablepackageids'] = list(new_packages.keys())
             packages = {**packages, **new_packages}
 
@@ -118,7 +116,7 @@ def transform_inspector_packages(packages: Dict[str, Any]) -> List[Dict]:
     return packages_list
 
 
-def _process_packages(package_details: Dict[str, Any], aws_account_id: str, finding_arn: str) -> Dict[str, Any]:
+def _process_packages(package_details: Dict[str, Any], finding_arn: str) -> Dict[str, Any]:
     packages: Dict[str, Any] = {}
     for package in package_details['vulnerablePackages']:
         new_package = {}
@@ -138,7 +136,6 @@ def _process_packages(package_details: Dict[str, Any], aws_account_id: str, find
         new_package['filepath'] = package.get('filePath')
         new_package['fixedinversion'] = package.get('fixedInVersion')
         new_package['sourcelayerhash'] = package.get('sourceLayerHash')
-        new_package['awsaccount'] = aws_account_id
         new_package['findingarn'] = finding_arn
 
         packages[new_package['id']] = new_package
@@ -158,7 +155,7 @@ def _load_findings_tx(
     region: str,
     aws_update_tag: int,
 ) -> None:
-    query = """
+    ingest_findings = """
     UNWIND $Findings as new_finding
         MERGE (finding:AWSInspectorFinding{id: new_finding.id})
         ON CREATE SET finding.firstseen = timestamp(),
@@ -167,58 +164,56 @@ def _load_findings_tx(
             finding.awsaccount = new_finding.awsaccount
         SET finding.lastupdated = $UpdateTag,
             finding.name = new_finding.title,
-            finding.instanceid = new_finding.instanceid,
-            finding.ecrimageid = new_finding.ecrimageid,
-            finding.ecrrepositoryid = new_finding.ecrrepositoryid,
             finding.severity = new_finding.severity,
             finding.firstobservedat = new_finding.firstobservedat,
-            finding.updatedat = new_finding.updatedat,
             finding.description = new_finding.description,
             finding.type = new_finding.type,
             finding.cvssscore = new_finding.cvssscore,
             finding.protocol = new_finding.protocol,
-            finding.portrange = new_finding.portrange,
             finding.portrangebegin = new_finding.portrangebegin,
             finding.portrangeend = new_finding.portrangeend,
             finding.vulnerabilityid = new_finding.vulnerabilityid,
             finding.referenceurls = new_finding.referenceurls,
             finding.relatedvulnerabilities = new_finding.relatedvulnerabilities,
-            finding.source = new_finding.source,
-            finding.sourceurl = new_finding.sourceurl,
             finding.status = new_finding.status,
-            finding.vendorcreatedat = new_finding.vendorcreatedat,
-            finding.vendorseverity = new_finding.vendorseverity,
-            finding.vendorupdatedat = new_finding.vendorupdatedat,
-            finding.vulnerablepackageids = new_finding.vulnerablepackageids,
-            finding:Risk
-        WITH finding
+            finding.vulnerablepackageids = new_finding.vulnerablepackageids
+        WITH finding, new_finding
+        FOREACH (x in CASE WHEN finding.type = "NETWORK_REACHABILITY" THEN [1] ELSE [] END | 
+        SET finding:OpenNetwork
+        )
+        FOREACH (x in CASE WHEN finding.type = "PACKAGE_VULNERABILITY" THEN [1] ELSE [] END | 
+        SET finding:CVE
+        )
+         WITH finding, new_finding
         MATCH (account:AWSAccount{id: finding.awsaccount})
         MERGE (account)-[r:RESOURCE]->(finding)
         ON CREATE SET r.firstseen = timestamp()
         SET r.lastupdated = $UpdateTag
-        WITH finding
-        MATCH (instance:EC2Instance{id: finding.instanceid})
-        MERGE (instance)<-[r2:AFFECTS]-(finding)
-        ON CREATE SET r2.firstseen = timestamp()
-        SET r2.lastupdated = $UpdateTag
-        WITH finding
-        MATCH (repo:ECRRepository{id: finding.ecrrepositoryid})
-        MERGE (repo)<-[r3:AFFECTS]-(finding)
-        ON CREATE SET r3.firstseen = timestamp()
-        SET r3.lastupdated = $UpdateTag
-        WITH finding
-        MATCH (image:ECRImage{id: finding.ecrimageid})
-        MERGE (image)<-[r4:AFFECTS]-(finding)
-        ON CREATE SET r4.firstseen = timestamp()
-        SET r4.lastupdated = $UpdateTag
+        WITH finding, new_finding
+        UNWIND new_finding.resources as resource
+        WITH finding,resource
+        WHERE resource.type = "AWS_EC2_INSTANCE"
+        MATCH (instance:EC2Instance{id: resource.instanceid})
+        WITH instance,finding
+        FOREACH (x in CASE WHEN finding.type = "NETWORK_REACHABILITY" THEN [1] ELSE [] END | 
+        MERGE (instance)-[r2:HAS_OPEN_NETWORK]->(finding) 
+        ON CREATE SET r2.firstseen = timestamp() 
+        SET r2.lastupdated = $UpdateTag, finding:OpenNetwork
+        )
+        FOREACH (x in CASE WHEN finding.type = "PACKAGE_VULNERABILITY" THEN [1] ELSE [] END | 
+        MERGE (instance)-[r2:HAS_VULNERABILITY]->(finding) 
+        ON CREATE SET r2.firstseen = timestamp() 
+        SET r2.lastupdated = $UpdateTag, finding:CVE
+        )
     """
 
     tx.run(
-        query,
+        ingest_findings,
         Findings=findings,
         UpdateTag=aws_update_tag,
         Region=region,
     )
+
 
 
 @timeit
@@ -245,10 +240,7 @@ def _load_packages_tx(
     query = """
     UNWIND $Packages as new_package
         MERGE (package:AWSInspectorPackage{id: new_package.id})
-        ON CREATE SET package.firstseen = timestamp(),
-            package.region = $Region,
-            package.awsaccount = new_package.awsaccount,
-            package.findingarn = new_package.findingarn
+        ON CREATE SET package.firstseen = timestamp()
         SET package.lastupdated = $UpdateTag,
             package.name = new_package.name,
             package.arch = new_package.arch,
@@ -262,9 +254,6 @@ def _load_packages_tx(
         WITH package
         MATCH (finding:AWSInspectorFinding{id: package.findingarn})
         MERGE (finding)-[r:HAS]->(package)
-        WITH package
-        MATCH (account:AWSAccount{id: package.awsaccount})
-        MERGE (account)-[r:RESOURCE]->(package)
         ON CREATE SET r.firstseen = timestamp()
         SET r.lastupdated = $UpdateTag
     """
@@ -308,8 +297,8 @@ def sync(
         logger.info(f"Syncing AWS Inspector findings for account {current_aws_account_id} and region {region}")
         findings = get_inspector_findings(boto3_session, region, current_aws_account_id)
         finding_data, package_data = transform_inspector_findings(findings)
-        logger.info(f"Loading {len(package_data)} packages")
-        load_inspector_packages(neo4j_session, package_data, region, update_tag)
         logger.info(f"Loading {len(finding_data)} findings")
         load_inspector_findings(neo4j_session, finding_data, region, update_tag)
+        logger.info(f"Loading {len(package_data)} packages")
+        load_inspector_packages(neo4j_session, package_data, region, update_tag)
         cleanup(neo4j_session, common_job_parameters)
